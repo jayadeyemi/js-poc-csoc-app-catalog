@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-csoc-html
+  namespace: hello-csoc
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>CSOC Spoke Cluster</title>
+      <style>
+        body { font-family: sans-serif; max-width: 640px; margin: 80px auto; color: #333; }
+        h1   { color: #1a6bb5; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px;
+               background: #e8f4fd; font-size: .85em; margin: 2px; }
+      </style>
+    </head>
+    <body>
+      <h1>CSOC POC — Spoke Cluster</h1>
+      <p>This cluster is managed by the <strong>Jetstream2 CSOC GitOps platform</strong>.</p>
+      <h3>Provisioning chain</h3>
+      <p>
+        <span class="tag">js-poc-csoc-fleet PR</span> →
+        <span class="tag">Argo CD</span> →
+        <span class="tag">KRO SpokeCluster</span> →
+        <span class="tag">CAPI + CAPO</span> →
+        <span class="tag">Jetstream2 OpenStack</span>
+      </p>
+      <h3>Application delivery</h3>
+      <p>
+        <span class="tag">Argo CD ApplicationSet</span> →
+        <span class="tag">cluster label: hello-csoc=enabled</span> →
+        <span class="tag">js-poc-csoc-app-catalog/hello-csoc</span>
+      </p>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-csoc
+  namespace: hello-csoc
+  labels:
+    app: hello-csoc
+    csoc.js2.org/managed: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-csoc
+  template:
+    metadata:
+      labels:
+        app: hello-csoc
+    spec:
+      securityContext:
+        runAsNonRoot: false   # nginx requires root for default port binding
+      containers:
+        - name: hello-csoc
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: html
+          configMap:
+            name: hello-csoc-html
