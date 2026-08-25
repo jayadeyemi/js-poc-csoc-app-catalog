@@ -60,11 +60,10 @@ csoc/
   kustomization.yaml
   namespaces.yaml        CSOC-managed namespaces
   network-policies.yaml  default deny + allow rules
-  config/                manually applied immutable account/provider blocks
-  rgd-apps/              trusted RGD instances
+  kro-apps/              manually applied config, identity, and workload RGD instances
 ```
 
-Provider UUIDs and account project IDs may appear only in reviewed immutable ConfigMaps under `csoc/config/`; credentials never appear in Git.
+Provider UUIDs and account project IDs may appear only in reviewed `ImmutableSpokeConfig` instances under `csoc/kro-apps/`; KRO renders their immutable ConfigMaps, and credentials never appear in Git.
 
 ## Pitfalls
 
