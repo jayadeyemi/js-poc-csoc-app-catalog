@@ -33,10 +33,11 @@ resources according to each network graph's management policy.
 key stored in immutable configuration. `SpokeCluster` consumes only its
 generated connection ConfigMap; it never accepts a fleet-supplied keypair name.
 
-`HelloApp` is the only Hello API. `target: csoc` deploys directly; `target:
-spoke` creates a CAPI `ClusterResourceSet` in the management cluster. Both
-expose only an internal OpenStack load balancer. Do not add Argo
-ApplicationSets or raw spoke packages.
+`HelloApp` is the only Hello API. `target: csoc` deploys directly through an
+internal OpenStack load balancer; `target: spoke` creates a CAPI
+`ClusterResourceSet` and a separate public Octavia load balancer restricted to
+the immutable account `applicationAllowedCIDR`. Do not add Argo ApplicationSets
+or raw spoke packages.
 
 ## Boundaries
 
@@ -51,7 +52,7 @@ ApplicationSets or raw spoke packages.
   not be duplicated in immutable configuration.
 - Imported OpenStack resources must use exact filters and
   `managementPolicy: unmanaged`.
-- Application Services must remain internal-only unless a separate reviewed
-  public-access design supplies a restricted source CIDR and proves that the
-  cloud enforces it. Never reuse a CAPO-owned API load balancer for workloads.
+- Public Application Services must use a separate load balancer, a tracked
+  immutable source `/32`, and acceptance evidence that Octavia enforces it.
+  Never reuse a CAPO-owned API load balancer for workloads.
 - Every Kustomize render and the workspace validation gate must pass.

@@ -33,6 +33,7 @@ spec:
         autoAllocatedRouterName: string | default="auto_allocated_router"
         dnsNameserver: string | default="8.8.8.8"
         apiServerAllowedCIDR: string | required=true
+        applicationAllowedCIDR: string | required=true
       storage:
         volumeType: string | default="__DEFAULT__"
         availabilityZone: string | default="nova"
@@ -96,6 +97,7 @@ spec:
           autoAllocatedRouterName: ${schema.spec.network.autoAllocatedRouterName}
           dnsNameserver: ${schema.spec.network.dnsNameserver}
           apiServerAllowedCIDR: ${schema.spec.network.apiServerAllowedCIDR}
+          applicationAllowedCIDR: ${schema.spec.network.applicationAllowedCIDR}
     - id: storageconfig
       template:
         apiVersion: v1
