@@ -22,7 +22,7 @@ spec:
       projectID: string | required=true pattern="^[0-9a-fA-F]{32}$"
       compute:
         imageID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
-        sshKeyName: string | required=true
+        sshPublicKey: string | required=true pattern="^ssh-(ed25519|rsa|ecdsa-[^ ]+) [A-Za-z0-9+/]+={0,3}$"
         controlPlaneFlavor: string | required=true
         generalWorkerFlavor: string | required=true
         serverGroupPolicy: string | default="soft-anti-affinity" enum="affinity,anti-affinity,soft-affinity,soft-anti-affinity"
@@ -77,7 +77,7 @@ spec:
         immutable: true
         data:
           imageID: ${schema.spec.compute.imageID}
-          sshKeyName: ${schema.spec.compute.sshKeyName}
+          sshPublicKey: ${schema.spec.compute.sshPublicKey}
           controlPlaneFlavor: ${schema.spec.compute.controlPlaneFlavor}
           generalWorkerFlavor: ${schema.spec.compute.generalWorkerFlavor}
           serverGroupPolicy: ${schema.spec.compute.serverGroupPolicy}
