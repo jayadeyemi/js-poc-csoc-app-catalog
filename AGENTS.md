@@ -13,7 +13,7 @@ rgds/
   test-poc/            tested reusable OpenStack profile library
     configmaps/        write-once provider and spoke configuration blocks
     cluster/v1/        SpokeIdentity and SpokeCluster graphs
-    compute/           optional Nova placement graphs
+    compute/           ORC-managed keypairs and optional Nova placement graphs
     network/           imported, isolated, shared-router, and routed graphs
     security/          optional Neutron policy graphs
     storage/           optional Cinder graphs
@@ -28,6 +28,10 @@ immutable configuration, and account-specific admission restrictions.
 `SpokeCluster` provisions Kubernetes resources in an existing OpenStack cloud
 through CAPI/CAPO. It never installs OpenStack. ORC manages or imports Neutron
 resources according to each network graph's management policy.
+
+`SpokeKeypair` creates the account's Nova keypair through ORC from the public
+key stored in immutable configuration. `SpokeCluster` consumes only its
+generated connection ConfigMap; it never accepts a fleet-supplied keypair name.
 
 `HelloApp` is the only Hello API. `target: csoc` deploys directly; `target:
 spoke` creates a CAPI `ClusterResourceSet` in the management cluster. Both

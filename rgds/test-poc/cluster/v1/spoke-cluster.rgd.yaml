@@ -103,6 +103,13 @@ spec:
         metadata:
           name: ${clusterconfig.data.networkConnectionName}
           namespace: ${schema.metadata.namespace}
+    - id: keypairconnection
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-keypair-connection"}'
+          namespace: ${schema.metadata.namespace}
 
     - id: openstackcluster
       template:
@@ -163,7 +170,7 @@ spec:
               flavor: ${computeconfig.data.controlPlaneFlavor}
               image:
                 id: ${computeconfig.data.imageID}
-              sshKeyName: ${computeconfig.data.sshKeyName}
+              sshKeyName: ${keypairconnection.data.keypairName}
 
     - id: kubeadmcontrolplane
       template:
@@ -263,7 +270,7 @@ spec:
               flavor: ${computeconfig.data.generalWorkerFlavor}
               image:
                 id: ${computeconfig.data.imageID}
-              sshKeyName: ${computeconfig.data.sshKeyName}
+              sshKeyName: ${keypairconnection.data.keypairName}
 
     - id: kubeadmconfigtemplate
       template:

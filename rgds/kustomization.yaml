@@ -7,6 +7,7 @@ resources:
   - test-poc/configmaps/spoke-environment-config.rgd.yaml
   - test-poc/configmaps/spoke-network-import-config.rgd.yaml
   - test-poc/configmaps/spoke-shared-network-config.rgd.yaml
+  - test-poc/compute/spoke-keypair.rgd.yaml
   - test-poc/compute/spoke-server-group.rgd.yaml
   - test-poc/network/auto-allocated-spoke-network.rgd.yaml
   - test-poc/network/dedicated-spoke-network.rgd.yaml

@@ -1,0 +1,83 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokekeypair
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: ORC-managed Nova keypair derived from trusted immutable account configuration
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeKeypair
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Keypair
+        type: string
+        jsonPath: .status.keypairName
+      - name: Fingerprint
+        type: string
+        jsonPath: .status.fingerprint
+    spec: {}
+    status:
+      ready: '${keypair.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && connection.metadata.name != ""}'
+      identityName: ${identity.metadata.name}
+      keypairName: ${keypair.status.resource.name}
+      fingerprint: '${keypair.?status.?resource.?fingerprint.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: computeconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-compute-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: keypair
+      readyWhen:
+        - '${keypair.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: KeyPair
+        metadata:
+          name: '${schema.metadata.name + "-keypair"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            publicKey: ${computeconfig.data.sshPublicKey}
+            type: ssh
+    - id: connection
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-keypair-connection"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/managed: "true"
+            csoc.js2.org/spoke: ${schema.metadata.name}
+        immutable: true
+        data:
+          keypairName: ${keypair.status.resource.name}
+          fingerprint: ${keypair.status.resource.fingerprint}
