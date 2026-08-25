@@ -1,0 +1,149 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: helloapp
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    kro.run/description: Reconciled Hello workload delivered directly to a CAPI spoke
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: apps.csoc.js2.org
+    kind: HelloApp
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Cluster
+        type: string
+        jsonPath: .status.clusterName
+    spec:
+      replicas: integer | default=2 minimum=1 maximum=3
+    status:
+      ready: ${resourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}
+      clusterName: ${cluster.metadata.name}
+      service: hello-app.hello-app.svc.cluster.local
+  resources:
+    - id: cluster
+      externalRef:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+    - id: workload
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-hello-app"}'
+          namespace: ${schema.metadata.namespace}
+        data:
+          hello-app.yaml: |
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: hello-app
+              labels:
+                csoc.js2.org/managed: "true"
+                csoc.js2.org/app: hello-app
+            ---
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: hello-app-html
+              namespace: hello-app
+            data:
+              index.html: |
+                <!doctype html>
+                <html lang="en">
+                  <head><meta charset="utf-8"><title>Hello App</title></head>
+                  <body><h1>Hello from every spoke.</h1></body>
+                </html>
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: hello-app
+              namespace: hello-app
+              labels:
+                app: hello-app
+                csoc.js2.org/managed: "true"
+            spec:
+              replicas: ${schema.spec.replicas}
+              selector:
+                matchLabels:
+                  app: hello-app
+              template:
+                metadata:
+                  labels:
+                    app: hello-app
+                spec:
+                  containers:
+                    - name: hello-app
+                      image: nginx:1.25-alpine
+                      ports:
+                        - name: http
+                          containerPort: 80
+                      volumeMounts:
+                        - name: html
+                          mountPath: /usr/share/nginx/html
+                          readOnly: true
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          cpu: 100m
+                          memory: 128Mi
+                      readinessProbe:
+                        httpGet:
+                          path: /
+                          port: http
+                        initialDelaySeconds: 5
+                        periodSeconds: 10
+                      livenessProbe:
+                        httpGet:
+                          path: /
+                          port: http
+                        initialDelaySeconds: 10
+                        periodSeconds: 30
+                  volumes:
+                    - name: html
+                      configMap:
+                        name: hello-app-html
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: hello-app
+              namespace: hello-app
+              labels:
+                app: hello-app
+                csoc.js2.org/managed: "true"
+            spec:
+              selector:
+                app: hello-app
+              ports:
+                - name: http
+                  port: 80
+                  targetPort: http
+              type: ClusterIP
+    - id: resourceset
+      readyWhen:
+        - ${resourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1beta2
+        kind: ClusterResourceSet
+        metadata:
+          name: '${schema.metadata.name + "-hello-app"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          strategy: Reconcile
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${cluster.metadata.name}
+          resources:
+            - kind: ConfigMap
+              name: ${workload.metadata.name}

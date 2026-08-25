@@ -25,12 +25,6 @@ spec:
       kubernetes:
         minNodes: integer | default=2 minimum=1 maximum=4
         maxNodes: integer | default=4 minimum=1 maximum=4
-      capabilities:
-        security: boolean | default=false
-        observability: boolean | default=false
-      registration:
-        enabled: boolean | default=true
-        labels: "map[string]string"
     status:
       ready: '${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
       addonsReady: '${calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
@@ -57,7 +51,7 @@ spec:
     - id: identity
       externalRef:
         apiVersion: csoc.js2.org/v1alpha1
-        kind: CSOCIdentity
+        kind: SpokeIdentity
         metadata:
           name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
     - id: infrastructureconfig

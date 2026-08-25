@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: hello-app
-  labels:
-    csoc.js2.org/managed: "true"
-    csoc.js2.org/app: hello-app

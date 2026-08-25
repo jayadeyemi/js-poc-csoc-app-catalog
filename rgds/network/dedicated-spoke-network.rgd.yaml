@@ -43,7 +43,7 @@ spec:
     - id: identity
       externalRef:
         apiVersion: csoc.js2.org/v1alpha1
-        kind: CSOCIdentity
+        kind: SpokeIdentity
         metadata:
           name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
     - id: infrastructureconfig

@@ -1,73 +1,41 @@
 # js-poc-csoc-app-catalog
 
-Shared KRO definitions, trusted CSOC instances/configuration, and application payloads. ApplicationSets in `js-poc-csoc-bootstrap` reference application directories using label selectors. Fleet inventory remains separate.
+This repository is definitions-only. It publishes reusable KRO
+`ResourceGraphDefinition` objects; all graph instances live in
+`js-poc-csoc-fleet/accounts/`.
 
 GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
-## Repo layout
+## Layout
 
 ```
-rgds/                 grouped identity, network, cluster, and direct-workload RGDs
-csoc/                 trusted CSOC instances and immutable configuration blocks
-hello-app/            opt-in spoke workload
-security/             installed when security=enabled
-observability/        installed when observability=enabled
+rgds/
+  configmaps/          write-once provider and spoke configuration blocks
+  cluster/v1/          SpokeIdentity and SpokeCluster graphs
+  network/             auto-allocated imports and dedicated network graphs
+  workloads/           direct CAPI addon workload graphs
+  kustomization.yaml   the only Argo source entrypoint
 ```
 
-The `rgds/` and `csoc/` trees are management-cluster Applications. Workload directories such as `hello-app/` are selected for registered spokes by ApplicationSets.
+`SpokeIdentity` is the restricted OpenStack account boundary. It creates an
+account namespace, a namespace-restricted `OpenStackClusterIdentity`, copied
+immutable configuration, and account-specific admission restrictions.
 
-## Directory conventions
+`SpokeCluster` provisions Kubernetes resources in an existing OpenStack cloud
+through CAPI/CAPO. It never installs OpenStack. ORC manages or imports Neutron
+resources according to each network graph's management policy.
 
-Each capability directory must contain either:
+`HelloApp` demonstrates the workload pattern: the graph creates a CAPI
+`ClusterResourceSet` in the management cluster, which reconciles the workload
+into the selected spoke. Do not add Argo ApplicationSets or raw spoke packages.
 
-**Kustomize** (preferred for manifests):
-```
-<capability>/
-  kustomization.yaml    base resources list
-  <resource>.yaml       individual manifests
-```
+## Boundaries
 
-**Helm** (for third-party charts):
-```
-<capability>/
-  kustomization.yaml    HelmChart resource or helmCharts entry
-  values.yaml           chart values
-```
-
-Both are valid. Use Kustomize for CSOC-authored resources; use Helm for upstream charts.
-
-## Validation
-
-```bash
-# Validate a capability package (requires kustomize)
-kustomize build <capability>/
-
-# Helm template dry-run (if using Helm)
-helm template <release-name> <chart> -f <capability>/values.yaml
-```
-
-## Adding a new capability
-
-1. Create a top-level directory: `<capability>/kustomization.yaml`
-2. Add the corresponding ApplicationSet in `js-poc-csoc-bootstrap/argocd/applicationsets/<capability>.yaml`
-3. Add the cluster label `csoc.js2.org/<capability>: enabled` to clusters that should receive it (via `js-poc-csoc-fleet` cluster.yaml `registration.labels`)
-
-## Trusted CSOC package
-
-Minimum contents:
-```
-csoc/
-  kustomization.yaml
-  namespaces.yaml        CSOC-managed namespaces
-  network-policies.yaml  default deny + allow rules
-  kro-apps/              manually applied config, identity, and workload RGD instances
-```
-
-Provider UUIDs and account project IDs may appear only in reviewed `ImmutableSpokeConfig` instances under `csoc/kro-apps/`; KRO renders their immutable ConfigMaps, and credentials never appear in Git.
-
-## Pitfalls
-
-- **Cluster selection is done by ApplicationSets in `js-poc-csoc-bootstrap`**, not here. Do not add cluster selectors inside this repo.
-- **Do not put `SpokeCluster` CRs or fleet inventory here.** That belongs in `js-poc-csoc-fleet`.
-- **Application version upgrades** (e.g. a new Gen3 release) are a change to this repo only; shared RGD definitions remain grouped under `rgds/`. Keep application payload and cluster lifecycle changes reviewable independently.
-- `kustomize build` must succeed with no errors before merging.
+- Do not put RGD instances, credentials, account IDs, or fleet inventory here.
+- Do not add Argo `Application`, `ApplicationSet`, baseline, security, or
+  observability packages.
+- Immutable provider restrictions belong in graph-produced ConfigMaps.
+- Mutable operator choices belong in the narrow schema of the consuming RGD.
+- Imported OpenStack resources must use exact filters and
+  `managementPolicy: unmanaged`.
+- Every Kustomize render and the workspace validation gate must pass.
