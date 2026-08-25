@@ -1,0 +1,128 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: csochelloapp
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    kro.run/description: Private Hello workload deployed directly into the CSOC management cluster
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: apps.csoc.js2.org
+    kind: CSOCHelloApp
+    scope: Cluster
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Namespace
+        type: string
+        jsonPath: .status.namespace
+    spec:
+      replicas: integer | default=2 minimum=1 maximum=3
+    status:
+      ready: '${deployment.?status.?availableReplicas.orValue(0) >= deployment.spec.replicas && service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}'
+      namespace: ${appnamespace.metadata.name}
+  resources:
+    - id: appnamespace
+      readyWhen:
+        - '${appnamespace.?status.?phase.orValue("") == "Active"}'
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: csoc-apps
+          labels:
+            csoc.js2.org/managed: "true"
+            csoc.js2.org/target: csoc
+    - id: html
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: hello-app-html
+          namespace: ${appnamespace.metadata.name}
+        data:
+          index.html: |
+            <!doctype html>
+            <html lang="en">
+              <head><meta charset="utf-8"><title>Hello App</title></head>
+              <body><h1>Hello CSOC.</h1></body>
+            </html>
+    - id: deployment
+      readyWhen:
+        - '${deployment.?status.?availableReplicas.orValue(0) >= deployment.spec.replicas}'
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: hello-app
+          namespace: ${appnamespace.metadata.name}
+          labels:
+            app: hello-app
+            csoc.js2.org/managed: "true"
+        spec:
+          replicas: ${schema.spec.replicas}
+          selector:
+            matchLabels:
+              app: hello-app
+          template:
+            metadata:
+              labels:
+                app: hello-app
+            spec:
+              containers:
+                - name: hello-app
+                  image: nginx:1.25-alpine
+                  ports:
+                    - name: http
+                      containerPort: 80
+                  volumeMounts:
+                    - name: html
+                      mountPath: /usr/share/nginx/html
+                      readOnly: true
+                  resources:
+                    requests:
+                      cpu: 50m
+                      memory: 64Mi
+                    limits:
+                      cpu: 100m
+                      memory: 128Mi
+                  readinessProbe:
+                    httpGet:
+                      path: /
+                      port: http
+                    initialDelaySeconds: 5
+                    periodSeconds: 10
+                  livenessProbe:
+                    httpGet:
+                      path: /
+                      port: http
+                    initialDelaySeconds: 10
+                    periodSeconds: 30
+              volumes:
+                - name: html
+                  configMap:
+                    name: ${html.metadata.name}
+    - id: service
+      readyWhen:
+        - '${service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}'
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: hello-app
+          namespace: ${appnamespace.metadata.name}
+          labels:
+            app: hello-app
+            csoc.js2.org/managed: "true"
+          annotations:
+            service.beta.kubernetes.io/openstack-internal-load-balancer: "true"
+        spec:
+          selector:
+            app: hello-app
+          ports:
+            - name: http
+              port: 80
+              targetPort: http
+          type: LoadBalancer
