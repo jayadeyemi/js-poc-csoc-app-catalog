@@ -1,0 +1,148 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: csocidentity
+  annotations:
+    argocd.argoproj.io/sync-wave: "-8"
+    kro.run/description: Restricted OpenStack account identity and CSOC namespace boundary
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: CSOCIdentity
+    scope: Cluster
+    additionalPrinterColumns:
+      - name: Namespace
+        type: string
+        jsonPath: .status.namespace
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+    spec:
+      credentialPolicy: string | default="restricted" enum="restricted"
+    status:
+      ready: '${accountnamespace.?status.?phase.orValue("") == "Active"}'
+      namespace: ${accountnamespace.metadata.name}
+      identityName: ${openstackidentity.metadata.name}
+      projectID: ${trustedaccountconfig.data.projectID}
+      capoSecretName: '${schema.metadata.name + "-cloud-config"}'
+      workloadSecretName: '${schema.metadata.name + "-workload-cloud-config"}'
+  resources:
+    - id: trustedaccountconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-account-config"}'
+          namespace: csoc-system
+    - id: trustedinfrastructureconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-infrastructure-config"}'
+          namespace: csoc-system
+    - id: trustedkubernetesconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-kubernetes-config"}'
+          namespace: csoc-system
+    - id: accountnamespace
+      readyWhen:
+        - '${accountnamespace.?status.?phase.orValue("") == "Active"}'
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: '${"spokeclusters-" + schema.metadata.name}'
+          labels:
+            csoc.js2.org/managed: "true"
+            csoc.js2.org/openstack-credentials: allowed
+            csoc.js2.org/credential-policy: ${schema.spec.credentialPolicy}
+            csoc.js2.org/identity: ${schema.metadata.name}
+            csoc.js2.org/openstack-project-id: ${trustedaccountconfig.data.projectID}
+    - id: accountconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-account-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustedaccountconfig.data}
+    - id: infrastructureconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-infrastructure-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustedinfrastructureconfig.data}
+    - id: kubernetesconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-kubernetes-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustedkubernetesconfig.data}
+    - id: openstackidentity
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: OpenStackClusterIdentity
+        metadata:
+          name: ${schema.metadata.name}
+        spec:
+          namespaceSelector:
+            matchLabels:
+              csoc.js2.org/identity: ${schema.metadata.name}
+          secretRef:
+            name: '${schema.metadata.name + "-cloud-config"}'
+            namespace: ${accountnamespace.metadata.name}
+    - id: registrationsecretreader
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: cluster-registration-kubeconfigs
+          namespace: ${accountnamespace.metadata.name}
+        rules:
+          - apiGroups: [""]
+            resources: [secrets]
+            verbs: [get, list]
+    - id: registrationsecretreaderbinding
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: cluster-registration-kubeconfigs
+          namespace: ${accountnamespace.metadata.name}
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: ${registrationsecretreader.metadata.name}
+        subjects:
+          - kind: ServiceAccount
+            name: cluster-registration
+            namespace: cluster-registration
+    - id: accountpolicybinding
+      template:
+        apiVersion: admissionregistration.k8s.io/v1
+        kind: ValidatingAdmissionPolicyBinding
+        metadata:
+          name: '${"spokecluster-account-restrictions-" + schema.metadata.name}'
+        spec:
+          policyName: spokecluster-account-restrictions.csoc.js2.org
+          paramRef:
+            name: ${schema.metadata.name}
+            parameterNotFoundAction: Deny
+          matchResources:
+            namespaceSelector:
+              matchLabels:
+                csoc.js2.org/identity: ${schema.metadata.name}
+          validationActions:
+            - Deny

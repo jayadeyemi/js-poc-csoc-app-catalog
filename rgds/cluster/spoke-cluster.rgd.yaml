@@ -1,0 +1,577 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokecluster
+  annotations:
+    argocd.argoproj.io/sync-wave: "-6"
+    kro.run/description: Account-scoped CSOC spoke cluster API backed by CAPI and CAPO
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeCluster
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Phase
+        type: string
+        jsonPath: .status.phase
+      - name: Endpoint
+        type: string
+        jsonPath: .status.endpoint
+    spec:
+      kubernetes:
+        minNodes: integer | default=2 minimum=1 maximum=4
+        maxNodes: integer | default=4 minimum=1 maximum=4
+      capabilities:
+        security: boolean | default=false
+        observability: boolean | default=false
+      registration:
+        enabled: boolean | default=true
+        labels: "map[string]string"
+    status:
+      ready: '${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
+      addonsReady: '${calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
+      autoscalerReady: ${autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}
+      endpoint: '${cluster.?spec.?controlPlaneEndpoint.?host.orValue("") + (cluster.?spec.?controlPlaneEndpoint.?port.orValue(0) > 0 ? ":" + string(cluster.spec.controlPlaneEndpoint.port) : "")}'
+      clusterName: ${cluster.metadata.name}
+      identityName: ${identity.metadata.name}
+      networkKind: ${networkconnection.data.networkType}
+      controlPlaneCount: ${int(kubernetesconfig.data.controlPlaneCount)}
+      phase: '${cluster.?status.?phase.orValue("Pending")}'
+      networkID: ${networkconnection.data.networkID}
+      subnetID: ${networkconnection.data.subnetID}
+      routerID: ${networkconnection.data.routerID}
+      loadBalancerID: '${openstackcluster.?status.?apiServerLoadBalancer.?id.orValue("")}'
+
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: CSOCIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: infrastructureconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-infrastructure-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: kubernetesconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-kubernetes-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: clusterconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-cluster-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: networkconnection
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${clusterconfig.data.networkConnectionName}
+          namespace: ${schema.metadata.namespace}
+
+    - id: openstackcluster
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackCluster
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+        spec:
+          identityRef:
+            cloudName: openstack
+            name: ${identity.metadata.name}
+            type: ClusterIdentity
+          managedSecurityGroups:
+            allowAllInClusterTraffic: false
+            allNodesSecurityGroupRules:
+              - name: calico-typha
+                description: Allow Calico nodes to connect to Typha
+                direction: ingress
+                etherType: IPv4
+                protocol: tcp
+                portRangeMin: 5473
+                portRangeMax: 5473
+                remoteManagedGroups:
+                  - controlplane
+                  - worker
+              - name: calico-vxlan
+                description: Allow Calico VXLAN traffic between nodes
+                direction: ingress
+                etherType: IPv4
+                protocol: udp
+                portRangeMin: 4789
+                portRangeMax: 4789
+                remoteManagedGroups:
+                  - controlplane
+                  - worker
+          apiServerLoadBalancer:
+            enabled: true
+            allowedCIDRs:
+              - ${infrastructureconfig.data.apiServerAllowedCIDR}
+          network:
+            id: ${networkconnection.data.networkID}
+          subnets:
+            - id: ${networkconnection.data.subnetID}
+          externalNetwork:
+            id: ${networkconnection.data.externalNetworkID}
+
+    - id: controlplanemachinetemplate
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackMachineTemplate
+        metadata:
+          name: ${schema.metadata.name}-control-plane
+          namespace: ${schema.metadata.namespace}
+        spec:
+          template:
+            spec:
+              flavor: ${kubernetesconfig.data.controlPlaneFlavor}
+              image:
+                id: ${infrastructureconfig.data.imageID}
+              sshKeyName: ${infrastructureconfig.data.sshKeyName}
+
+    - id: kubeadmcontrolplane
+      template:
+        apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+        kind: KubeadmControlPlane
+        metadata:
+          name: ${schema.metadata.name}-control-plane
+          namespace: ${schema.metadata.namespace}
+        spec:
+          replicas: ${int(kubernetesconfig.data.controlPlaneCount)}
+          version: ${kubernetesconfig.data.version}
+          machineTemplate:
+            infrastructureRef:
+              apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+              kind: OpenStackMachineTemplate
+              name: ${controlplanemachinetemplate.metadata.name}
+              namespace: ${schema.metadata.namespace}
+          kubeadmConfigSpec:
+            # Kubernetes 1.34.2-1.34.8 can reach upload-config before a cloud
+            # load balancer converges. Retry only the remaining init phases;
+            # remove this wrapper after the workload image moves to 1.34.9+.
+            preKubeadmCommands:
+              - |
+                if [ ! -x /usr/bin/kubeadm.real ]; then
+                  mv /usr/bin/kubeadm /usr/bin/kubeadm.real
+                  cat >/usr/bin/kubeadm <<'EOF'
+                #!/bin/bash
+                /usr/bin/kubeadm.real "$@"
+                status=$?
+                if [[ $status -eq 0 || "$1" != init ]]; then
+                  exit "$status"
+                fi
+                echo "kubeadm init hit the Kubernetes 1.34 load-balancer race; retrying remaining phases" >&2
+                sleep 30
+                exec /usr/bin/kubeadm.real "$@" --skip-phases=preflight,certs,kubeconfig,etcd,control-plane,kubelet-start,wait-control-plane
+                EOF
+                  chmod 0755 /usr/bin/kubeadm
+                fi
+            initConfiguration:
+              nodeRegistration:
+                kubeletExtraArgs:
+                  cloud-provider: external
+            clusterConfiguration:
+              apiServer:
+                extraArgs:
+                  tls-min-version: VersionTLS12
+              controllerManager:
+                extraArgs:
+                  cloud-provider: external
+            joinConfiguration:
+              nodeRegistration:
+                kubeletExtraArgs:
+                  cloud-provider: external
+
+    - id: cluster
+      readyWhen:
+        - ${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+            csoc.js2.org/environment: ${clusterconfig.data.environment}
+            csoc.js2.org/addons: enabled
+        spec:
+          clusterNetwork:
+            pods:
+              cidrBlocks:
+                - ${clusterconfig.data.podCIDR}
+            services:
+              cidrBlocks:
+                - ${clusterconfig.data.serviceCIDR}
+          infrastructureRef:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: OpenStackCluster
+            name: ${openstackcluster.metadata.name}
+            namespace: ${schema.metadata.namespace}
+          controlPlaneRef:
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+            kind: KubeadmControlPlane
+            name: ${kubeadmcontrolplane.metadata.name}
+            namespace: ${schema.metadata.namespace}
+
+    - id: workermachinetemplate
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackMachineTemplate
+        metadata:
+          name: ${schema.metadata.name}-workers
+          namespace: ${schema.metadata.namespace}
+        spec:
+          template:
+            spec:
+              flavor: '${clusterconfig.data.nodeClass == "highmem" ? kubernetesconfig.data.highmemWorkerFlavor : (clusterconfig.data.nodeClass == "gpu" ? kubernetesconfig.data.gpuWorkerFlavor : kubernetesconfig.data.generalWorkerFlavor)}'
+              image:
+                id: ${infrastructureconfig.data.imageID}
+              sshKeyName: ${infrastructureconfig.data.sshKeyName}
+
+    - id: kubeadmconfigtemplate
+      template:
+        apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+        kind: KubeadmConfigTemplate
+        metadata:
+          name: ${schema.metadata.name}-workers
+          namespace: ${schema.metadata.namespace}
+        spec:
+          template:
+            spec:
+              joinConfiguration:
+                nodeRegistration:
+                  kubeletExtraArgs:
+                    cloud-provider: external
+
+    - id: machinedeployment
+      template:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: MachineDeployment
+        metadata:
+          name: ${schema.metadata.name}-workers
+          namespace: ${schema.metadata.namespace}
+          annotations:
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: ${string(schema.spec.kubernetes.minNodes)}
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: ${string(schema.spec.kubernetes.maxNodes)}
+        spec:
+          clusterName: ${schema.metadata.name}
+          selector:
+            matchLabels: {}
+          template:
+            spec:
+              clusterName: ${schema.metadata.name}
+              version: ${kubernetesconfig.data.version}
+              bootstrap:
+                configRef:
+                  apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+                  kind: KubeadmConfigTemplate
+                  name: ${kubeadmconfigtemplate.metadata.name}
+                  namespace: ${schema.metadata.namespace}
+              infrastructureRef:
+                apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+                kind: OpenStackMachineTemplate
+                name: ${workermachinetemplate.metadata.name}
+                namespace: ${schema.metadata.namespace}
+
+    - id: cloudconfigresourceset
+      readyWhen:
+        - ${cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1beta2
+        kind: ClusterResourceSet
+        metadata:
+          name: ${schema.metadata.name}-openstack-cloud-config
+          namespace: ${schema.metadata.namespace}
+        spec:
+          strategy: Reconcile
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          resources:
+            - kind: Secret
+              name: '${identity.metadata.name + "-workload-cloud-config"}'
+
+    - id: calico
+      readyWhen:
+        - ${calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1alpha1
+        kind: HelmChartProxy
+        metadata:
+          name: ${schema.metadata.name}-calico
+          namespace: ${schema.metadata.namespace}
+        spec:
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          repoURL: https://docs.tigera.io/calico/charts
+          chartName: tigera-operator
+          version: v3.32.1
+          releaseName: calico
+          namespace: tigera-operator
+          reconcileStrategy: Continuous
+          options:
+            wait: true
+            waitForJobs: true
+            timeout: 15m
+            install:
+              createNamespace: true
+              includeCRDs: true
+          valuesTemplate: |
+            installation:
+              enabled: false
+            apiServer:
+              enabled: false
+            goldmane:
+              enabled: false
+            whisker:
+              enabled: false
+
+    - id: calicoconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${schema.metadata.name}-calico-installation
+          namespace: ${schema.metadata.namespace}
+        data:
+          installation.yaml: |
+            apiVersion: operator.tigera.io/v1
+            kind: Installation
+            metadata:
+              name: default
+            spec:
+              cni:
+                type: Calico
+              calicoNetwork:
+                bgp: Disabled
+                ipPools:
+                  - cidr: ${clusterconfig.data.podCIDR}
+                    encapsulation: VXLAN
+                    natOutgoing: Enabled
+                    nodeSelector: all()
+
+    - id: calicoinstallation
+      readyWhen:
+        - ${calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1beta2
+        kind: ClusterResourceSet
+        metadata:
+          name: ${schema.metadata.name}-calico-installation
+          namespace: ${schema.metadata.namespace}
+          annotations:
+            csoc.js2.org/calico-operator: ${calico.metadata.name}
+        spec:
+          strategy: Reconcile
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          resources:
+            - kind: ConfigMap
+              name: ${calicoconfig.metadata.name}
+
+    - id: openstackccm
+      readyWhen:
+        - ${openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1alpha1
+        kind: HelmChartProxy
+        metadata:
+          name: ${schema.metadata.name}-openstack-ccm
+          namespace: ${schema.metadata.namespace}
+        spec:
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          repoURL: https://kubernetes.github.io/cloud-provider-openstack
+          chartName: openstack-cloud-controller-manager
+          version: 2.34.2
+          releaseName: openstack-ccm
+          namespace: kube-system
+          reconcileStrategy: Continuous
+          options:
+            wait: true
+            timeout: 15m
+          valuesTemplate: |
+            secret:
+              enabled: true
+              create: false
+              name: cloud-config
+            cluster:
+              name: "{{ .Cluster.metadata.name }}"
+
+    - id: cindercsi
+      readyWhen:
+        - ${cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1alpha1
+        kind: HelmChartProxy
+        metadata:
+          name: ${schema.metadata.name}-cinder-csi
+          namespace: ${schema.metadata.namespace}
+        spec:
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          repoURL: https://kubernetes.github.io/cloud-provider-openstack
+          chartName: openstack-cinder-csi
+          version: 2.34.3
+          releaseName: cinder-csi
+          namespace: kube-system
+          reconcileStrategy: Continuous
+          options:
+            wait: true
+            timeout: 15m
+          valuesTemplate: |
+            secret:
+              enabled: true
+              hostMount: false
+              create: false
+              name: cloud-config
+              filename: cloud.conf
+            clusterID: "{{ .Cluster.metadata.name }}"
+            storageClass:
+              enabled: true
+              delete:
+                isDefault: true
+                allowVolumeExpansion: true
+              retain:
+                isDefault: false
+                allowVolumeExpansion: true
+
+    - id: autoscalerserviceaccount
+      template:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: ${schema.metadata.name}-cluster-autoscaler
+          namespace: ${schema.metadata.namespace}
+
+    - id: autoscalerrole
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: ${schema.metadata.name}-cluster-autoscaler
+          namespace: ${schema.metadata.namespace}
+        rules:
+          - apiGroups:
+              - cluster.x-k8s.io
+            resources:
+              - machinedeployments
+              - machinedeployments/scale
+              - machines
+              - machinesets
+              - machinepools
+            verbs:
+              - get
+              - list
+              - patch
+              - update
+              - watch
+          - apiGroups:
+              - infrastructure.cluster.x-k8s.io
+            resources:
+              - openstackmachinetemplates
+            verbs:
+              - get
+              - list
+              - watch
+
+    - id: autoscalerrolebinding
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: ${schema.metadata.name}-cluster-autoscaler
+          namespace: ${schema.metadata.namespace}
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: ${autoscalerrole.metadata.name}
+        subjects:
+          - kind: ServiceAccount
+            name: ${autoscalerserviceaccount.metadata.name}
+            namespace: ${schema.metadata.namespace}
+
+    - id: autoscalerdeployment
+      readyWhen:
+        - ${autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.metadata.name}-cluster-autoscaler
+          namespace: ${schema.metadata.namespace}
+          labels:
+            app.kubernetes.io/name: cluster-autoscaler
+            csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: cluster-autoscaler
+              csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: cluster-autoscaler
+                csoc.js2.org/spoke-cluster: ${schema.metadata.name}
+            spec:
+              serviceAccountName: ${autoscalerserviceaccount.metadata.name}
+              terminationGracePeriodSeconds: 10
+              containers:
+                - name: cluster-autoscaler
+                  image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.34.5
+                  imagePullPolicy: IfNotPresent
+                  command:
+                    - /cluster-autoscaler
+                  args:
+                    - --cloud-provider=clusterapi
+                    - --kubeconfig=/etc/kubernetes/workload/value
+                    - --clusterapi-cloud-config-authoritative
+                    - --node-group-auto-discovery=clusterapi:namespace=${schema.metadata.namespace},clusterName=${schema.metadata.name}
+                    - --enforce-node-group-min-size
+                    - --leader-elect=false
+                    - --v=2
+                  env:
+                    - name: CAPI_VERSION
+                      value: v1beta1
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 300Mi
+                    limits:
+                      cpu: 500m
+                      memory: 600Mi
+                  volumeMounts:
+                    - name: workload-kubeconfig
+                      mountPath: /etc/kubernetes/workload
+                      readOnly: true
+              volumes:
+                - name: workload-kubeconfig
+                  secret:
+                    secretName: ${schema.metadata.name}-kubeconfig

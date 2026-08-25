@@ -1,0 +1,230 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: clusterregistration
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    kro.run/description: Reconciles ready KRO spokes into Argo CD cluster secrets
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: apps.csoc.js2.org
+    kind: ClusterRegistration
+    scope: Cluster
+    spec:
+      schedule: string | default="*/2 * * * *"
+      image: string | default="alpine/k8s:1.34.9@sha256:72c921a10c53ab749674e828ad12b776d006481c852bba7dd89e149ceed666f3"
+    status:
+      ready: '${cronjob.metadata.name != ""}'
+  resources:
+    - id: appnamespace
+      readyWhen:
+        - '${appnamespace.?status.?phase.orValue("") == "Active"}'
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: cluster-registration
+          labels:
+            csoc.js2.org/managed: "true"
+    - id: serviceaccount
+      template:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: cluster-registration
+          namespace: ${appnamespace.metadata.name}
+    - id: readerrole
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: cluster-registration
+        rules:
+          - apiGroups: [csoc.js2.org]
+            resources: [spokeclusters]
+            verbs: [get, list, watch]
+          - apiGroups: [cluster.x-k8s.io]
+            resources: [clusters]
+            verbs: [get, list, watch]
+    - id: readerbinding
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: cluster-registration
+        subjects:
+          - kind: ServiceAccount
+            name: ${serviceaccount.metadata.name}
+            namespace: ${appnamespace.metadata.name}
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: ${readerrole.metadata.name}
+    - id: argocdwriterrole
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: cluster-registration-argocd
+          namespace: argocd
+        rules:
+          - apiGroups: [""]
+            resources: [secrets]
+            verbs: [get, list, create, update, patch]
+    - id: argocdwriterbinding
+      template:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: cluster-registration-argocd
+          namespace: argocd
+        subjects:
+          - kind: ServiceAccount
+            name: ${serviceaccount.metadata.name}
+            namespace: ${appnamespace.metadata.name}
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: Role
+          name: ${argocdwriterrole.metadata.name}
+    - id: scripts
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: cluster-reachability
+          namespace: ${appnamespace.metadata.name}
+        data:
+          confirm-reachability.sh: |
+            #!/bin/sh
+            set -eu
+            fail() {
+              printf 'cluster=%s reachable=false reason=%s\n' "$cluster_name" "$1" >&2
+              exit 1
+            }
+            cluster_name=unknown
+            kubeconfig_file=
+            minimum_ready=
+            expected_endpoint=
+            request_timeout=15s
+            while [ "$#" -gt 0 ]; do
+              case "$1" in
+                --name) cluster_name=$2; shift 2 ;;
+                --kubeconfig) kubeconfig_file=$2; shift 2 ;;
+                --minimum-ready) minimum_ready=$2; shift 2 ;;
+                --expected-endpoint) expected_endpoint=$2; shift 2 ;;
+                --timeout) request_timeout=$2; shift 2 ;;
+                *) fail invalid-arguments ;;
+              esac
+            done
+            [ -r "$kubeconfig_file" ] || fail kubeconfig-unreadable
+            case "$minimum_ready" in ''|*[!0-9]*) fail invalid-minimum-ready ;; esac
+            server=$(kubectl --kubeconfig="$kubeconfig_file" config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}') || fail invalid-kubeconfig
+            case "$server" in https://*) ;; *) fail api-endpoint-is-not-https ;; esac
+            actual=$(printf '%s' "$server" | sed -e 's#^https://##' -e 's#/$##')
+            expected=$(printf '%s' "$expected_endpoint" | sed -e 's#^https://##' -e 's#/$##')
+            [ -z "$expected" ] || [ "$actual" = "$expected" ] || fail api-endpoint-mismatch
+            readyz=$(kubectl --kubeconfig="$kubeconfig_file" --request-timeout="$request_timeout" get --raw=/readyz 2>/dev/null) || fail readyz-unreachable
+            [ "$readyz" = ok ] || fail readyz-not-ok
+            [ "$(kubectl --kubeconfig="$kubeconfig_file" --request-timeout="$request_timeout" auth can-i list nodes 2>/dev/null)" = yes ] || fail cannot-list-nodes
+            report=$(kubectl --kubeconfig="$kubeconfig_file" --request-timeout="$request_timeout" get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\t"}{range .spec.taints[*]}{.key}{","}{end}{"\n"}{end}') || fail node-list-unreachable
+            printf '%s\n' "$report" | grep -F 'node.cloudprovider.kubernetes.io/uninitialized' >/dev/null && fail cloud-provider-uninitialized
+            node_count=$(printf '%s\n' "$report" | awk 'NF { count++ } END { print count + 0 }')
+            ready_count=$(printf '%s\n' "$report" | awk -F '\t' '$2 == "True" { count++ } END { print count + 0 }')
+            [ "$node_count" -gt 0 ] || fail no-nodes-reported
+            [ "$ready_count" -eq "$node_count" ] || fail not-all-nodes-ready
+            [ "$ready_count" -ge "$minimum_ready" ] || fail below-minimum-ready
+            printf 'cluster=%s reachable=true readyNodes=%s totalNodes=%s\n' "$cluster_name" "$ready_count" "$node_count"
+          register.sh: |
+            #!/bin/sh
+            set -eu
+            REACHABILITY_CHECKER=$(printenv REACHABILITY_CHECKER 2>/dev/null || true)
+            [ -n "$REACHABILITY_CHECKER" ] || REACHABILITY_CHECKER=/opt/csoc/bin/confirm-reachability.sh
+            WORK_DIR=$(mktemp -d)
+            trap 'rm -rf -- "$WORK_DIR"' EXIT HUP INT TERM
+            failures=$WORK_DIR/failures
+            clusters=$WORK_DIR/clusters
+            : >"$failures"
+            record_unreachable() {
+              checked_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+              printf '%s/%s\n' "$1" "$2" >>"$failures"
+              if kubectl get secret "cluster-$2" -n argocd >/dev/null 2>&1; then
+                kubectl annotate secret "cluster-$2" -n argocd --overwrite csoc.js2.org/reachable=false "csoc.js2.org/reachability-checked-at=$checked_at" >/dev/null
+              fi
+            }
+            kubectl get spokecluster --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\n"}{end}' >"$clusters"
+            while IFS="$(printf '\t')" read -r namespace name; do
+              [ -n "$name" ] || continue
+              enabled=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.spec.registration.enabled}' 2>/dev/null || true)
+              ready=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.status.ready}' 2>/dev/null || true)
+              endpoint=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.status.endpoint}' 2>/dev/null || true)
+              [ "$enabled" != false ] || continue
+              [ "$ready" = true ] && [ -n "$endpoint" ] || continue
+              kubeconfig_file=$WORK_DIR/$namespace-$name.kubeconfig
+              kubectl get secret "$name-kubeconfig" -n "$namespace" -o jsonpath='{.data.value}' | base64 -d >"$kubeconfig_file" || { record_unreachable "$namespace" "$name" kubeconfig-unavailable; continue; }
+              chmod 600 "$kubeconfig_file"
+              control_planes=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.status.controlPlaneCount}' 2>/dev/null || true)
+              minimum_workers=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.spec.kubernetes.minNodes}' 2>/dev/null || true)
+              case "$control_planes:$minimum_workers" in *[!0-9:]*) record_unreachable "$namespace" "$name" invalid-node-count; continue ;; esac
+              minimum_ready=$((control_planes + minimum_workers))
+              "$REACHABILITY_CHECKER" --name "$name" --kubeconfig "$kubeconfig_file" --minimum-ready "$minimum_ready" --expected-endpoint "$endpoint" --timeout 15s || { record_unreachable "$namespace" "$name" reachability-failed; continue; }
+              server=$(kubectl config view --kubeconfig="$kubeconfig_file" -o jsonpath='{.clusters[0].cluster.server}' --raw)
+              ca=$(kubectl config view --kubeconfig="$kubeconfig_file" -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' --raw)
+              cert=$(kubectl config view --kubeconfig="$kubeconfig_file" -o jsonpath='{.users[0].user.client-certificate-data}' --raw)
+              key=$(kubectl config view --kubeconfig="$kubeconfig_file" -o jsonpath='{.users[0].user.client-key-data}' --raw)
+              customer=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath="{.spec.registration.labels['csoc\.js2\.org/customer']}" 2>/dev/null || true)
+              environment=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath="{.spec.registration.labels['csoc\.js2\.org/environment']}" 2>/dev/null || true)
+              ownership=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath="{.spec.registration.labels['csoc\.js2\.org/ownership']}" 2>/dev/null || true)
+              hello=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath="{.spec.registration.labels['csoc\.js2\.org/hello-app']}" 2>/dev/null || true)
+              security=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.spec.capabilities.security}' 2>/dev/null || true)
+              observability=$(kubectl get spokecluster "$name" -n "$namespace" -o jsonpath='{.spec.capabilities.observability}' 2>/dev/null || true)
+              [ "$security" = true ] && security=enabled || security=disabled
+              [ "$observability" = true ] && observability=enabled || observability=disabled
+              [ -n "$ownership" ] || ownership=csoc
+              config=$WORK_DIR/$namespace-$name.argocd.json
+              printf '{"tlsClientConfig":{"caData":"%s","certData":"%s","keyData":"%s"}}' "$ca" "$cert" "$key" >"$config"
+              chmod 600 "$config"
+              kubectl create secret generic "cluster-$name" -n argocd --from-literal="name=$name" --from-literal="server=$server" --from-file="config=$config" --dry-run=client -o yaml | kubectl apply --server-side -f - >/dev/null
+              kubectl label secret "cluster-$name" -n argocd --overwrite argocd.argoproj.io/secret-type=cluster csoc.js2.org/type=spoke "csoc.js2.org/name=$name" "csoc.js2.org/customer=$customer" "csoc.js2.org/environment=$environment" "csoc.js2.org/ownership=$ownership" "csoc.js2.org/hello-app=$hello" "csoc.js2.org/security=$security" "csoc.js2.org/observability=$observability" >/dev/null
+              kubectl annotate secret "cluster-$name" -n argocd --overwrite csoc.js2.org/reachable=true "csoc.js2.org/reachability-checked-at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >/dev/null
+            done <"$clusters"
+            [ ! -s "$failures" ] || exit 1
+    - id: cronjob
+      template:
+        apiVersion: batch/v1
+        kind: CronJob
+        metadata:
+          name: cluster-registration
+          namespace: ${appnamespace.metadata.name}
+        spec:
+          schedule: ${schema.spec.schedule}
+          concurrencyPolicy: Forbid
+          successfulJobsHistoryLimit: 3
+          failedJobsHistoryLimit: 3
+          jobTemplate:
+            spec:
+              backoffLimit: 1
+              template:
+                spec:
+                  serviceAccountName: ${serviceaccount.metadata.name}
+                  restartPolicy: OnFailure
+                  containers:
+                    - name: register
+                      image: ${schema.spec.image}
+                      command: [/opt/csoc/bin/register.sh]
+                      resources:
+                        requests:
+                          cpu: 50m
+                          memory: 64Mi
+                        limits:
+                          cpu: 200m
+                          memory: 128Mi
+                      volumeMounts:
+                        - name: scripts
+                          mountPath: /opt/csoc/bin
+                          readOnly: true
+                  volumes:
+                    - name: scripts
+                      configMap:
+                        name: ${scripts.metadata.name}
+                        defaultMode: 0555

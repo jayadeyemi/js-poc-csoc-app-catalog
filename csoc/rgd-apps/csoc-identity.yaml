@@ -1,0 +1,7 @@
+apiVersion: csoc.js2.org/v1alpha1
+kind: CSOCIdentity
+metadata:
+  name: csoc-identity
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec: {}

@@ -1,0 +1,9 @@
+apiVersion: apps.csoc.js2.org/v1alpha1
+kind: ClusterRegistration
+metadata:
+  name: cluster-registration
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  schedule: "*/2 * * * *"
+  image: alpine/k8s:1.34.9@sha256:72c921a10c53ab749674e828ad12b776d006481c852bba7dd89e149ceed666f3

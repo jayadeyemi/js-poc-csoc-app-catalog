@@ -1,17 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: hello-csoc
-  namespace: hello-csoc
+  name: hello-app
+  namespace: hello-app
   labels:
-    app: hello-csoc
+    app: hello-app
     csoc.js2.org/managed: "true"
 spec:
   selector:
-    app: hello-csoc
+    app: hello-app
   ports:
     - name: http
       port: 80
-      targetPort: 80
-      protocol: TCP
+      targetPort: http
   type: ClusterIP

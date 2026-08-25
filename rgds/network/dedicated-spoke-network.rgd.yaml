@@ -1,0 +1,161 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: dedicatedspokenetwork
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: Dedicated spoke network attached to the allocation-owned Jetstream2 router
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: DedicatedSpokeNetwork
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: CIDR
+        type: string
+        jsonPath: .status.nodeCIDR
+      - name: Network
+        type: string
+        jsonPath: .status.networkID
+      - name: Router
+        type: string
+        jsonPath: .status.routerID
+    spec:
+      description: string | default="KRO-managed CSOC spoke network"
+    status:
+      ready: '${network.?status.?id.orValue("") != "" && subnet.?status.?id.orValue("") != "" && router.?status.?id.orValue("") != "" && routerinterface.?status.?id.orValue("") != ""}'
+      identityName: ${identity.metadata.name}
+      nodeCIDR: ${networkconfig.data.nodeCIDR}
+      networkID: '${network.?status.?id.orValue("")}'
+      subnetID: '${subnet.?status.?id.orValue("")}'
+      routerID: '${router.?status.?id.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: CSOCIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: infrastructureconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-infrastructure-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: networkconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: router
+      readyWhen:
+        - '${router.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Router
+        metadata:
+          name: '${schema.metadata.name + "-router"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            filter:
+              name: ${infrastructureconfig.data.autoAllocatedRouterName}
+    - id: network
+      readyWhen:
+        - '${network.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata:
+          name: '${schema.metadata.name + "-network"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            description: ${schema.spec.description}
+            portSecurityEnabled: true
+            tags:
+              - csoc
+              - kro-managed
+              - ${schema.metadata.name}
+    - id: subnet
+      readyWhen:
+        - '${subnet.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Subnet
+        metadata:
+          name: '${schema.metadata.name + "-subnet"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            description: '${"KRO-managed subnet for " + schema.metadata.name}'
+            networkRef: ${network.metadata.name}
+            cidr: ${networkconfig.data.nodeCIDR}
+            ipVersion: 4
+            enableDHCP: true
+            gateway:
+              type: Automatic
+            dnsNameservers:
+              - ${infrastructureconfig.data.dnsNameserver}
+            tags:
+              - csoc
+              - kro-managed
+              - ${schema.metadata.name}
+    - id: routerinterface
+      readyWhen:
+        - '${routerinterface.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: RouterInterface
+        metadata:
+          name: '${schema.metadata.name + "-router-interface"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          type: Subnet
+          routerRef: ${router.metadata.name}
+          subnetRef: ${subnet.metadata.name}
+    - id: connection
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-connection"}'
+          namespace: ${schema.metadata.namespace}
+        immutable: true
+        data:
+          networkType: private
+          networkID: ${network.status.id}
+          subnetID: ${subnet.status.id}
+          routerID: ${router.status.id}
+          externalNetworkID: ${infrastructureconfig.data.externalNetworkID}

@@ -1,20 +1,20 @@
 # js-poc-csoc-app-catalog
 
-Helm/Kustomize package definitions for every application the CSOC installs on spoke clusters. ApplicationSets in `js-poc-csoc-bootstrap` reference directories here using label selectors. No cluster inventory, no RGDs, no scripts.
+Shared KRO definitions, trusted CSOC instances/configuration, and application payloads. ApplicationSets in `js-poc-csoc-bootstrap` reference application directories using label selectors. Fleet inventory remains separate.
 
 GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
 ## Repo layout
 
 ```
-baseline/             installed on ALL spokes (selector: type=spoke)
+rgds/                 grouped identity, network, cluster, and direct-workload RGDs
+csoc/                 trusted CSOC instances and immutable configuration blocks
+hello-app/            opt-in spoke workload
 security/             installed when security=enabled
 observability/        installed when observability=enabled
-gen3/                 installed when gen3=enabled
-internal-tools/       CSOC-internal tooling only
 ```
 
-Each top-level directory maps to one Argo CD ApplicationSet selector in `js-poc-csoc-bootstrap/argocd/applicationsets/`.
+The `rgds/` and `csoc/` trees are management-cluster Applications. Workload directories such as `hello-app/` are selected for registered spokes by ApplicationSets.
 
 ## Directory conventions
 
@@ -52,21 +52,23 @@ helm template <release-name> <chart> -f <capability>/values.yaml
 2. Add the corresponding ApplicationSet in `js-poc-csoc-bootstrap/argocd/applicationsets/<capability>.yaml`
 3. Add the cluster label `csoc.js2.org/<capability>: enabled` to clusters that should receive it (via `js-poc-csoc-fleet` cluster.yaml `registration.labels`)
 
-## Baseline package (required on all spokes)
+## Trusted CSOC package
 
 Minimum contents:
 ```
-baseline/
+csoc/
   kustomization.yaml
   namespaces.yaml        CSOC-managed namespaces
   network-policies.yaml  default deny + allow rules
+  config/                manually applied immutable account/provider blocks
+  rgd-apps/              trusted RGD instances
 ```
 
-Do not add optional tooling to `baseline/` — put it in a capability directory instead.
+Provider UUIDs and account project IDs may appear only in reviewed immutable ConfigMaps under `csoc/config/`; credentials never appear in Git.
 
 ## Pitfalls
 
 - **Cluster selection is done by ApplicationSets in `js-poc-csoc-bootstrap`**, not here. Do not add cluster selectors inside this repo.
 - **Do not put `SpokeCluster` CRs or fleet inventory here.** That belongs in `js-poc-csoc-fleet`.
-- **Application version upgrades** (e.g. a new Gen3 release) are a change to this repo only — they do not affect `js-poc-csoc-platform-apis` or cluster lifecycle. Keep app and cluster lifecycle separate.
+- **Application version upgrades** (e.g. a new Gen3 release) are a change to this repo only; shared RGD definitions remain grouped under `rgds/`. Keep application payload and cluster lifecycle changes reviewable independently.
 - `kustomize build` must succeed with no errors before merging.
