@@ -3,7 +3,7 @@ kind: ResourceGraphDefinition
 metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-5"
-    kro.run/description: Internal Hello workload for either CSOC or one CAPI spoke
+    kro.run/description: Internal CSOC Hello or source-restricted public spoke Hello
   name: helloapp
 spec:
   resources:
@@ -117,6 +117,40 @@ spec:
           selector:
             app: hello-app
           type: LoadBalancer
+    - id: spokeaccountnamespace
+      includeWhen:
+        - ${schema.spec.target == "spoke"}
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: spokeidentity
+      includeWhen:
+        - ${schema.spec.target == "spoke"}
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${spokeaccountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: spokenetworkconfig
+      includeWhen:
+        - ${schema.spec.target == "spoke"}
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${spokeidentity.metadata.name + "-network-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: spokenetworkconnection
+      includeWhen:
+        - ${schema.spec.target == "spoke"}
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-connection"}'
+          namespace: ${schema.metadata.namespace}
     - id: workload
       includeWhen:
         - ${schema.spec.target == "spoke"}
@@ -206,10 +240,14 @@ spec:
                 app: hello-app
                 csoc.js2.org/managed: "true"
               annotations:
-                service.beta.kubernetes.io/openstack-internal-load-balancer: "true"
+                service.beta.kubernetes.io/openstack-internal-load-balancer: "false"
+                loadbalancer.openstack.org/floating-network-id: ${spokenetworkconnection.data.externalNetworkID}
+                loadbalancer.openstack.org/subnet-id: ${spokenetworkconnection.data.subnetID}
             spec:
               selector:
                 app: hello-app
+              loadBalancerSourceRanges:
+                - ${spokenetworkconfig.data.applicationAllowedCIDR}
               ports:
                 - name: http
                   port: 80
