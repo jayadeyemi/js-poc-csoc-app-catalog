@@ -1,0 +1,60 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokeenvironmentconfig
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Write-once network and Kubernetes configuration blocks for one spoke
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeEnvironmentConfig
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Environment
+        type: string
+        jsonPath: .status.environment
+    spec:
+      environment: string | required=true
+      nodeClass: string | default="general" enum="general,highmem,gpu"
+      nodeCIDR: string | required=true
+      podCIDR: string | default="192.168.0.0/16"
+      serviceCIDR: string | default="10.96.0.0/12"
+    status:
+      ready: '${networkconfig.metadata.name != "" && clusterconfig.metadata.name != ""}'
+      environment: ${schema.spec.environment}
+      networkConfigName: ${networkconfig.metadata.name}
+      clusterConfigName: ${clusterconfig.metadata.name}
+  resources:
+    - id: networkconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-config"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/config-source: kro
+        immutable: true
+        data:
+          nodeCIDR: ${schema.spec.nodeCIDR}
+    - id: clusterconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-cluster-config"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/config-source: kro
+        immutable: true
+        data:
+          environment: ${schema.spec.environment}
+          nodeClass: ${schema.spec.nodeClass}
+          networkConnectionName: '${schema.metadata.name + "-connection"}'
+          podCIDR: ${schema.spec.podCIDR}
+          serviceCIDR: ${schema.spec.serviceCIDR}

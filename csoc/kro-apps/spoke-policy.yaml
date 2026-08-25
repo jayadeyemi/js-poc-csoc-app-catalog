@@ -1,7 +1,0 @@
-apiVersion: apps.csoc.js2.org/v1alpha1
-kind: SpokePolicy
-metadata:
-  name: spoke-policy
-  annotations:
-    argocd.argoproj.io/sync-wave: "-4"
-spec: {}

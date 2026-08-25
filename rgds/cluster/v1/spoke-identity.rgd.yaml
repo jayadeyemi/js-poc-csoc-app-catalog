@@ -1,15 +1,15 @@
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
-  name: csocidentity
+  name: spokeidentity
   annotations:
     argocd.argoproj.io/sync-wave: "-8"
-    kro.run/description: Restricted OpenStack account identity and CSOC namespace boundary
+    kro.run/description: Restricted OpenStack account identity and spoke namespace boundary
 spec:
   schema:
     apiVersion: v1alpha1
     group: csoc.js2.org
-    kind: CSOCIdentity
+    kind: SpokeIdentity
     scope: Cluster
     additionalPrinterColumns:
       - name: Namespace
@@ -34,21 +34,21 @@ spec:
         kind: ConfigMap
         metadata:
           name: '${schema.metadata.name + "-account-config"}'
-          namespace: csoc-system
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
     - id: trustedinfrastructureconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
           name: '${schema.metadata.name + "-infrastructure-config"}'
-          namespace: csoc-system
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
     - id: trustedkubernetesconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
           name: '${schema.metadata.name + "-kubernetes-config"}'
-          namespace: csoc-system
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
     - id: accountnamespace
       readyWhen:
         - '${accountnamespace.?status.?phase.orValue("") == "Active"}'
@@ -103,32 +103,30 @@ spec:
           secretRef:
             name: '${schema.metadata.name + "-cloud-config"}'
             namespace: ${accountnamespace.metadata.name}
-    - id: registrationsecretreader
+    - id: accountpolicy
       template:
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: Role
+        apiVersion: admissionregistration.k8s.io/v1
+        kind: ValidatingAdmissionPolicy
         metadata:
-          name: cluster-registration-kubeconfigs
-          namespace: ${accountnamespace.metadata.name}
-        rules:
-          - apiGroups: [""]
-            resources: [secrets]
-            verbs: [get, list]
-    - id: registrationsecretreaderbinding
-      template:
-        apiVersion: rbac.authorization.k8s.io/v1
-        kind: RoleBinding
-        metadata:
-          name: cluster-registration-kubeconfigs
-          namespace: ${accountnamespace.metadata.name}
-        roleRef:
-          apiGroup: rbac.authorization.k8s.io
-          kind: Role
-          name: ${registrationsecretreader.metadata.name}
-        subjects:
-          - kind: ServiceAccount
-            name: cluster-registration
-            namespace: cluster-registration
+          name: '${"spokecluster-restrictions-" + schema.metadata.name + ".csoc.js2.org"}'
+        spec:
+          failurePolicy: Fail
+          paramKind:
+            apiVersion: csoc.js2.org/v1alpha1
+            kind: SpokeIdentity
+          matchConstraints:
+            resourceRules:
+              - apiGroups: [csoc.js2.org]
+                apiVersions: [v1alpha1]
+                operations: [CREATE, UPDATE]
+                resources: [spokeclusters]
+          validations:
+            - expression: object.spec.kubernetes.minNodes <= object.spec.kubernetes.maxNodes
+              message: minimum workers must not exceed maximum workers
+            - expression: object.spec.kubernetes.minNodes >= 1
+              message: minimum workers is 1
+            - expression: object.spec.kubernetes.maxNodes <= 4
+              message: maximum workers is 4
     - id: accountpolicybinding
       template:
         apiVersion: admissionregistration.k8s.io/v1
@@ -136,7 +134,7 @@ spec:
         metadata:
           name: '${"spokecluster-account-restrictions-" + schema.metadata.name}'
         spec:
-          policyName: spokecluster-account-restrictions.csoc.js2.org
+          policyName: ${accountpolicy.metadata.name}
           paramRef:
             name: ${schema.metadata.name}
             parameterNotFoundAction: Deny
