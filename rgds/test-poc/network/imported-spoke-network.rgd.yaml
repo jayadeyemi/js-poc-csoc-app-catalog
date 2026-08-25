@@ -1,15 +1,15 @@
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
-  name: autoallocatedspokenetwork
+  name: importedspokenetwork
   annotations:
     argocd.argoproj.io/sync-wave: "-7"
-    kro.run/description: Non-owning import of the Jetstream2 allocation network topology
+    kro.run/description: Exact-ID non-owning import of an existing OpenStack topology
 spec:
   schema:
     apiVersion: v1alpha1
     group: csoc.js2.org
-    kind: AutoAllocatedSpokeNetwork
+    kind: ImportedSpokeNetwork
     scope: Namespaced
     additionalPrinterColumns:
       - name: Ready
@@ -41,12 +41,19 @@ spec:
         kind: SpokeIdentity
         metadata:
           name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
-    - id: infrastructureconfig
+    - id: networkserviceconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
-          name: '${identity.metadata.name + "-infrastructure-config"}'
+          name: '${identity.metadata.name + "-network-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: importconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-import-config"}'
           namespace: ${schema.metadata.namespace}
     - id: network
       readyWhen:
@@ -63,8 +70,7 @@ spec:
             secretName: '${identity.metadata.name + "-cloud-config"}'
           managementPolicy: unmanaged
           import:
-            filter:
-              name: ${infrastructureconfig.data.autoAllocatedNetworkName}
+            id: ${importconfig.data.networkID}
     - id: subnet
       readyWhen:
         - '${subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
@@ -80,9 +86,7 @@ spec:
             secretName: '${identity.metadata.name + "-cloud-config"}'
           managementPolicy: unmanaged
           import:
-            filter:
-              name: ${infrastructureconfig.data.autoAllocatedSubnetName}
-              networkRef: ${network.metadata.name}
+            id: ${importconfig.data.subnetID}
     - id: router
       readyWhen:
         - '${router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
@@ -98,8 +102,7 @@ spec:
             secretName: '${identity.metadata.name + "-cloud-config"}'
           managementPolicy: unmanaged
           import:
-            filter:
-              name: ${infrastructureconfig.data.autoAllocatedRouterName}
+            id: ${importconfig.data.routerID}
     - id: connection
       template:
         apiVersion: v1
@@ -109,8 +112,8 @@ spec:
           namespace: ${schema.metadata.namespace}
         immutable: true
         data:
-          networkType: shared
+          networkType: imported
           networkID: ${network.status.id}
           subnetID: ${subnet.status.id}
           routerID: ${router.status.id}
-          externalNetworkID: ${infrastructureconfig.data.externalNetworkID}
+          externalNetworkID: ${networkserviceconfig.data.externalNetworkID}

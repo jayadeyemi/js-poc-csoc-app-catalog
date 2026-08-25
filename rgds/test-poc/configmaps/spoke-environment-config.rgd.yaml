@@ -23,6 +23,9 @@ spec:
       nodeCIDR: string | required=true
       podCIDR: string | default="192.168.0.0/16"
       serviceCIDR: string | default="10.96.0.0/12"
+      networkMTU: integer | default=1500 minimum=1280 maximum=9000
+      enableDHCP: boolean | default=true
+      portSecurityEnabled: boolean | default=true
     status:
       ready: '${networkconfig.metadata.name != "" && clusterconfig.metadata.name != ""}'
       environment: ${schema.spec.environment}
@@ -41,6 +44,9 @@ spec:
         immutable: true
         data:
           nodeCIDR: ${schema.spec.nodeCIDR}
+          networkMTU: ${string(schema.spec.networkMTU)}
+          enableDHCP: ${string(schema.spec.enableDHCP)}
+          portSecurityEnabled: ${string(schema.spec.portSecurityEnabled)}
     - id: clusterconfig
       template:
         apiVersion: v1

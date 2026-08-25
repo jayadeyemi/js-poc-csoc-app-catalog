@@ -1,0 +1,46 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokenetworkimportconfig
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Write-once exact OpenStack IDs for an imported spoke topology
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeNetworkImportConfig
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Network
+        type: string
+        jsonPath: .status.networkID
+    spec:
+      networkID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+      subnetID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+      routerID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+    status:
+      ready: '${importconfig.metadata.name != ""}'
+      networkID: ${schema.spec.networkID}
+      subnetID: ${schema.spec.subnetID}
+      routerID: ${schema.spec.routerID}
+      configMapName: ${importconfig.metadata.name}
+  resources:
+    - id: importconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-import-config"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/config-source: kro
+            csoc.js2.org/config-lifecycle: write-once
+        immutable: true
+        data:
+          networkID: ${schema.spec.networkID}
+          subnetID: ${schema.spec.subnetID}
+          routerID: ${schema.spec.routerID}

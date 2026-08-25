@@ -1,0 +1,131 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: immutablespokeconfig
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Write-once trusted inputs for account-scoped spoke graphs
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: ImmutableSpokeConfig
+    scope: Cluster
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Project
+        type: string
+        jsonPath: .status.projectID
+    spec:
+      projectID: string | required=true pattern="^[0-9a-fA-F]{32}$"
+      compute:
+        imageID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+        sshKeyName: string | required=true
+        controlPlaneFlavor: string | required=true
+        generalWorkerFlavor: string | required=true
+        serverGroupPolicy: string | default="soft-anti-affinity" enum="affinity,anti-affinity,soft-affinity,soft-anti-affinity"
+      network:
+        externalNetworkID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+        autoAllocatedNetworkName: string | default="auto_allocated_network"
+        autoAllocatedSubnetName: string | default="auto_allocated_subnet_v4"
+        autoAllocatedRouterName: string | default="auto_allocated_router"
+        dnsNameserver: string | default="8.8.8.8"
+        apiServerAllowedCIDR: string | required=true
+      storage:
+        volumeType: string | default="__DEFAULT__"
+        availabilityZone: string | default="nova"
+      loadBalancer:
+        provider: string | default="amphora" enum="amphora"
+        exposurePolicy: string | default="internal" enum="internal"
+      kubernetes:
+        version: string | default="v1.34.8" pattern="^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        controlPlaneCount: integer | default=1 minimum=1 maximum=3
+    status:
+      ready: '${accountconfig.metadata.name != "" && computeconfig.metadata.name != "" && networkserviceconfig.metadata.name != "" && storageconfig.metadata.name != "" && loadbalancerconfig.metadata.name != "" && kubernetesconfig.metadata.name != ""}'
+      projectID: ${schema.spec.projectID}
+  resources:
+    - id: confignamespace
+      readyWhen:
+        - '${confignamespace.?status.?phase.orValue("") == "Active"}'
+      template:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: '${"spokeconfig-" + schema.metadata.name}'
+          labels:
+            csoc.js2.org/managed: "true"
+            csoc.js2.org/identity: ${schema.metadata.name}
+    - id: accountconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-account-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          projectID: ${schema.spec.projectID}
+    - id: computeconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-compute-service-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          imageID: ${schema.spec.compute.imageID}
+          sshKeyName: ${schema.spec.compute.sshKeyName}
+          controlPlaneFlavor: ${schema.spec.compute.controlPlaneFlavor}
+          generalWorkerFlavor: ${schema.spec.compute.generalWorkerFlavor}
+          serverGroupPolicy: ${schema.spec.compute.serverGroupPolicy}
+    - id: networkserviceconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-service-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          externalNetworkID: ${schema.spec.network.externalNetworkID}
+          autoAllocatedNetworkName: ${schema.spec.network.autoAllocatedNetworkName}
+          autoAllocatedSubnetName: ${schema.spec.network.autoAllocatedSubnetName}
+          autoAllocatedRouterName: ${schema.spec.network.autoAllocatedRouterName}
+          dnsNameserver: ${schema.spec.network.dnsNameserver}
+          apiServerAllowedCIDR: ${schema.spec.network.apiServerAllowedCIDR}
+    - id: storageconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-storage-service-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          volumeType: ${schema.spec.storage.volumeType}
+          availabilityZone: ${schema.spec.storage.availabilityZone}
+    - id: loadbalancerconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-loadbalancer-service-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          provider: ${schema.spec.loadBalancer.provider}
+          exposurePolicy: ${schema.spec.loadBalancer.exposurePolicy}
+    - id: kubernetesconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-kubernetes-config"}'
+          namespace: ${confignamespace.metadata.name}
+        immutable: true
+        data:
+          version: ${schema.spec.kubernetes.version}
+          controlPlaneCount: ${string(schema.spec.kubernetes.controlPlaneCount)}

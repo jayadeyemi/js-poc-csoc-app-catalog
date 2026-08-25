@@ -1,15 +1,15 @@
 apiVersion: kro.run/v1alpha1
 kind: ResourceGraphDefinition
 metadata:
-  name: dedicatedspokenetwork
+  name: routedspokenetwork
   annotations:
     argocd.argoproj.io/sync-wave: "-7"
-    kro.run/description: Dedicated spoke network attached to the allocation-owned Jetstream2 router
+    kro.run/description: Dedicated managed network, subnet, router, and external gateway
 spec:
   schema:
     apiVersion: v1alpha1
     group: csoc.js2.org
-    kind: DedicatedSpokeNetwork
+    kind: RoutedSpokeNetwork
     scope: Namespaced
     additionalPrinterColumns:
       - name: Ready
@@ -25,7 +25,7 @@ spec:
         type: string
         jsonPath: .status.routerID
     spec:
-      description: string | default="KRO-managed CSOC spoke network"
+      description: string | default="KRO-managed routed CSOC spoke network"
     status:
       ready: '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && routerinterface.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       identityName: ${identity.metadata.name}
@@ -46,12 +46,12 @@ spec:
         kind: SpokeIdentity
         metadata:
           name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
-    - id: infrastructureconfig
+    - id: networkserviceconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
-          name: '${identity.metadata.name + "-infrastructure-config"}'
+          name: '${identity.metadata.name + "-network-service-config"}'
           namespace: ${schema.metadata.namespace}
     - id: networkconfig
       externalRef:
@@ -60,14 +60,14 @@ spec:
         metadata:
           name: '${schema.metadata.name + "-network-config"}'
           namespace: ${schema.metadata.namespace}
-    - id: router
+    - id: externalnetwork
       readyWhen:
-        - '${router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+        - '${externalnetwork.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       template:
         apiVersion: openstack.k-orc.cloud/v1alpha1
-        kind: Router
+        kind: Network
         metadata:
-          name: '${schema.metadata.name + "-router"}'
+          name: '${schema.metadata.name + "-external-network"}'
           namespace: ${schema.metadata.namespace}
         spec:
           cloudCredentialsRef:
@@ -75,8 +75,7 @@ spec:
             secretName: '${identity.metadata.name + "-cloud-config"}'
           managementPolicy: unmanaged
           import:
-            filter:
-              name: ${infrastructureconfig.data.autoAllocatedRouterName}
+            id: ${networkserviceconfig.data.externalNetworkID}
     - id: network
       readyWhen:
         - '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
@@ -96,11 +95,9 @@ spec:
           resource:
             name: '${"csoc-" + schema.metadata.name}'
             description: ${schema.spec.description}
-            portSecurityEnabled: true
-            tags:
-              - csoc
-              - kro-managed
-              - ${schema.metadata.name}
+            mtu: ${int(networkconfig.data.networkMTU)}
+            portSecurityEnabled: '${networkconfig.data.portSecurityEnabled == "true"}'
+            tags: [csoc, kro-managed, routed]
     - id: subnet
       readyWhen:
         - '${subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
@@ -119,19 +116,38 @@ spec:
             onDelete: delete
           resource:
             name: '${"csoc-" + schema.metadata.name}'
-            description: '${"KRO-managed subnet for " + schema.metadata.name}'
+            description: '${"KRO-managed routed subnet for " + schema.metadata.name}'
             networkRef: ${network.metadata.name}
             cidr: ${networkconfig.data.nodeCIDR}
             ipVersion: 4
-            enableDHCP: true
+            enableDHCP: '${networkconfig.data.enableDHCP == "true"}'
             gateway:
               type: Automatic
             dnsNameservers:
-              - ${infrastructureconfig.data.dnsNameserver}
-            tags:
-              - csoc
-              - kro-managed
-              - ${schema.metadata.name}
+              - ${networkserviceconfig.data.dnsNameserver}
+            tags: [csoc, kro-managed, routed]
+    - id: router
+      readyWhen:
+        - '${router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Router
+        metadata:
+          name: '${schema.metadata.name + "-router"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            description: '${"KRO-managed router for " + schema.metadata.name}'
+            externalGateways:
+              - networkRef: ${externalnetwork.metadata.name}
+            tags: [csoc, kro-managed, routed]
     - id: routerinterface
       readyWhen:
         - '${routerinterface.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
@@ -154,8 +170,8 @@ spec:
           namespace: ${schema.metadata.namespace}
         immutable: true
         data:
-          networkType: private
+          networkType: routed
           networkID: ${network.status.id}
           subnetID: ${subnet.status.id}
           routerID: ${router.status.id}
-          externalNetworkID: ${infrastructureconfig.data.externalNetworkID}
+          externalNetworkID: ${externalnetwork.status.id}

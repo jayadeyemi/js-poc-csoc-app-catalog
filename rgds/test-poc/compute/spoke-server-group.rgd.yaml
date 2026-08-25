@@ -1,0 +1,68 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokeservergroup
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: ORC-managed Nova server group for spoke node placement policy
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeServerGroup
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Policy
+        type: string
+        jsonPath: .status.policy
+      - name: GroupID
+        type: string
+        jsonPath: .status.serverGroupID
+    spec: {}
+    status:
+      ready: '${servergroup.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      identityName: ${identity.metadata.name}
+      policy: ${computeconfig.data.serverGroupPolicy}
+      serverGroupID: '${servergroup.?status.?id.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: computeconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-compute-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: servergroup
+      readyWhen:
+        - '${servergroup.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: ServerGroup
+        metadata:
+          name: '${schema.metadata.name + "-servergroup"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            policy: ${computeconfig.data.serverGroupPolicy}
