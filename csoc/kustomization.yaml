@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - namespaces.yaml
   - network-policies.yaml
-  - config
-  - rgd-apps
+  - kro-apps
