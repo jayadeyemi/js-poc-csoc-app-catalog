@@ -1,0 +1,96 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokevolume
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: ORC-managed Cinder volume pre-provisioned for stateful spoke workloads
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeVolume
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: SizeGB
+        type: integer
+        jsonPath: .status.sizeGB
+      - name: VolumeID
+        type: string
+        jsonPath: .status.volumeID
+    spec:
+      sizeGB: integer | required=true minimum=10 maximum=2048
+      description: string | default="KRO-managed volume for spoke workload"
+    status:
+      ready: '${volume.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      identityName: ${identity.metadata.name}
+      sizeGB: ${schema.spec.sizeGB}
+      volumeID: '${volume.?status.?id.orValue("")}'
+      availabilityZone: ${storageconfig.data.availabilityZone}
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: storageconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-storage-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: volumetype
+      readyWhen:
+        - '${volumetype.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: VolumeType
+        metadata:
+          name: '${schema.metadata.name + "-volume-type"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            filter:
+              name: ${storageconfig.data.volumeType}
+    - id: volume
+      readyWhen:
+        - '${volume.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Volume
+        metadata:
+          name: '${schema.metadata.name + "-volume"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            description: ${schema.spec.description}
+            size: ${schema.spec.sizeGB}
+            volumeTypeRef: ${volumetype.metadata.name}
+            availabilityZone: ${storageconfig.data.availabilityZone}
+            metadata:
+              - name: managed-by
+                value: kro
+              - name: csoc-spoke
+                value: ${schema.metadata.name}

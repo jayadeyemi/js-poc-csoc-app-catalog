@@ -10,10 +10,14 @@ GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
 ```
 rgds/
-  configmaps/          write-once provider and spoke configuration blocks
-  cluster/v1/          SpokeIdentity and SpokeCluster graphs
-  network/             auto-allocated imports and dedicated network graphs
-  workloads/           direct CSOC and CAPI addon workload graphs
+  test-poc/            tested reusable OpenStack profile library
+    configmaps/        write-once provider and spoke configuration blocks
+    cluster/v1/        SpokeIdentity and SpokeCluster graphs
+    compute/           optional Nova placement graphs
+    network/           imported, isolated, shared-router, and routed graphs
+    security/          optional Neutron policy graphs
+    storage/           optional Cinder graphs
+    workloads/         conditional direct CSOC/CAPI addon workload graphs
   kustomization.yaml   the only Argo source entrypoint
 ```
 
@@ -25,10 +29,10 @@ immutable configuration, and account-specific admission restrictions.
 through CAPI/CAPO. It never installs OpenStack. ORC manages or imports Neutron
 resources according to each network graph's management policy.
 
-`CSOCHelloApp` deploys the CSOC-local Hello workload directly. `HelloApp`
-creates a CAPI `ClusterResourceSet` in the management cluster, which reconciles
-the workload into the selected spoke. Both expose only an internal OpenStack
-load balancer. Do not add Argo ApplicationSets or raw spoke packages.
+`HelloApp` is the only Hello API. `target: csoc` deploys directly; `target:
+spoke` creates a CAPI `ClusterResourceSet` in the management cluster. Both
+expose only an internal OpenStack load balancer. Do not add Argo
+ApplicationSets or raw spoke packages.
 
 ## Boundaries
 

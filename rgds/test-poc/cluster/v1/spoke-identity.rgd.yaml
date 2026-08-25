@@ -35,12 +35,33 @@ spec:
         metadata:
           name: '${schema.metadata.name + "-account-config"}'
           namespace: '${"spokeconfig-" + schema.metadata.name}'
-    - id: trustedinfrastructureconfig
+    - id: trustedcomputeconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
-          name: '${schema.metadata.name + "-infrastructure-config"}'
+          name: '${schema.metadata.name + "-compute-service-config"}'
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
+    - id: trustednetworkserviceconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-service-config"}'
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
+    - id: trustedstorageconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-storage-service-config"}'
+          namespace: '${"spokeconfig-" + schema.metadata.name}'
+    - id: trustedloadbalancerconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-loadbalancer-service-config"}'
           namespace: '${"spokeconfig-" + schema.metadata.name}'
     - id: trustedkubernetesconfig
       externalRef:
@@ -72,15 +93,42 @@ spec:
           namespace: ${accountnamespace.metadata.name}
         immutable: true
         data: ${trustedaccountconfig.data}
-    - id: infrastructureconfig
+    - id: computeconfig
       template:
         apiVersion: v1
         kind: ConfigMap
         metadata:
-          name: '${schema.metadata.name + "-infrastructure-config"}'
+          name: '${schema.metadata.name + "-compute-service-config"}'
           namespace: ${accountnamespace.metadata.name}
         immutable: true
-        data: ${trustedinfrastructureconfig.data}
+        data: ${trustedcomputeconfig.data}
+    - id: networkserviceconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-network-service-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustednetworkserviceconfig.data}
+    - id: storageconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-storage-service-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustedstorageconfig.data}
+    - id: loadbalancerconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-loadbalancer-service-config"}'
+          namespace: ${accountnamespace.metadata.name}
+        immutable: true
+        data: ${trustedloadbalancerconfig.data}
     - id: kubernetesconfig
       template:
         apiVersion: v1

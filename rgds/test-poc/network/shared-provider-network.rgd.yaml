@@ -1,0 +1,103 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: sharedprovidernetwork
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: Non-owning import of a shared or provider network by operator-supplied names
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SharedProviderNetwork
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Network
+        type: string
+        jsonPath: .status.networkID
+      - name: Subnet
+        type: string
+        jsonPath: .status.subnetID
+    spec: {}
+    status:
+      ready: '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      identityName: ${identity.metadata.name}
+      networkID: '${network.?status.?id.orValue("")}'
+      subnetID: '${subnet.?status.?id.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: networkserviceconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-network-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: sharedconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-shared-network-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: network
+      readyWhen:
+        - '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata:
+          name: '${schema.metadata.name + "-network"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            id: ${sharedconfig.data.networkID}
+    - id: subnet
+      readyWhen:
+        - '${subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Subnet
+        metadata:
+          name: '${schema.metadata.name + "-subnet"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            id: ${sharedconfig.data.subnetID}
+    - id: connection
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-connection"}'
+          namespace: ${schema.metadata.namespace}
+        immutable: true
+        data:
+          networkType: provider
+          networkID: ${network.status.id}
+          subnetID: ${subnet.status.id}
+          # Provider networks route externally; no ORC-owned router
+          routerID: ""
+          externalNetworkID: ${networkserviceconfig.data.externalNetworkID}

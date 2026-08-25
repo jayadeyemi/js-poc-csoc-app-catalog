@@ -1,0 +1,89 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokesecuritygroup
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: ORC-managed security group with one operator-defined ingress rule for spoke workloads
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeSecurityGroup
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: GroupID
+        type: string
+        jsonPath: .status.securityGroupID
+    spec:
+      description: string | default="KRO-managed security group for spoke workloads"
+      # Ingress rule controlling allowed inbound traffic
+      ingressProtocol: string | default="tcp"
+      ingressPortMin: integer | default=443 minimum=1 maximum=65535
+      ingressPortMax: integer | default=443 minimum=1 maximum=65535
+      # Restrict ingress to a specific CIDR; use 0.0.0.0/0 only for public services
+      # that have been through a separate reviewed public-access design.
+      ingressRemoteCIDR: string | default="10.0.0.0/8"
+    status:
+      ready: '${securitygroup.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      identityName: ${identity.metadata.name}
+      securityGroupID: '${securitygroup.?status.?id.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: SpokeIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: securitygroup
+      readyWhen:
+        - '${securitygroup.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: SecurityGroup
+        metadata:
+          name: '${schema.metadata.name + "-sg"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: managed
+          managedOptions:
+            onDelete: delete
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            description: ${schema.spec.description}
+            tags:
+              - csoc
+              - kro-managed
+              - ${schema.metadata.name}
+            rules:
+              # Allow configured inbound traffic
+              - description: '${"KRO inbound " + schema.spec.ingressProtocol + " " + string(schema.spec.ingressPortMin) + "-" + string(schema.spec.ingressPortMax)}'
+                direction: ingress
+                ethertype: IPv4
+                protocol: ${schema.spec.ingressProtocol}
+                portRange:
+                  min: ${schema.spec.ingressPortMin}
+                  max: ${schema.spec.ingressPortMax}
+                remoteIPPrefix: ${schema.spec.ingressRemoteCIDR}
+              # Allow all outbound IPv4
+              - description: Allow all outbound IPv4
+                direction: egress
+                ethertype: IPv4
+                remoteIPPrefix: "0.0.0.0/0"
+              # Allow all outbound IPv6
+              - description: Allow all outbound IPv6
+                direction: egress
+                ethertype: IPv6
+                remoteIPPrefix: "::/0"

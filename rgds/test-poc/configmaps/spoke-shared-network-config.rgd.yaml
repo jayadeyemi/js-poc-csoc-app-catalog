@@ -1,0 +1,43 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokesharednetworkconfig
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Write-once exact IDs for an existing shared/provider network
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: SpokeSharedNetworkConfig
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Network
+        type: string
+        jsonPath: .status.networkID
+    spec:
+      networkID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+      subnetID: string | required=true pattern="^[0-9a-fA-F-]{36}$"
+    status:
+      ready: '${sharedconfig.metadata.name != ""}'
+      networkID: ${schema.spec.networkID}
+      subnetID: ${schema.spec.subnetID}
+      configMapName: ${sharedconfig.metadata.name}
+  resources:
+    - id: sharedconfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-shared-network-config"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/config-source: kro
+            csoc.js2.org/config-lifecycle: write-once
+        immutable: true
+        data:
+          networkID: ${schema.spec.networkID}
+          subnetID: ${schema.spec.subnetID}

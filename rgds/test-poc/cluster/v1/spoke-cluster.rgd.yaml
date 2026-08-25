@@ -54,12 +54,33 @@ spec:
         kind: SpokeIdentity
         metadata:
           name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
-    - id: infrastructureconfig
+    - id: computeconfig
       externalRef:
         apiVersion: v1
         kind: ConfigMap
         metadata:
-          name: '${identity.metadata.name + "-infrastructure-config"}'
+          name: '${identity.metadata.name + "-compute-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: networkserviceconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-network-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: storageconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-storage-service-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: loadbalancerconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-loadbalancer-service-config"}'
           namespace: ${schema.metadata.namespace}
     - id: kubernetesconfig
       externalRef:
@@ -121,7 +142,7 @@ spec:
           apiServerLoadBalancer:
             enabled: true
             allowedCIDRs:
-              - ${infrastructureconfig.data.apiServerAllowedCIDR}
+              - ${networkserviceconfig.data.apiServerAllowedCIDR}
           network:
             id: ${networkconnection.data.networkID}
           subnets:
@@ -139,10 +160,10 @@ spec:
         spec:
           template:
             spec:
-              flavor: ${kubernetesconfig.data.controlPlaneFlavor}
+              flavor: ${computeconfig.data.controlPlaneFlavor}
               image:
-                id: ${infrastructureconfig.data.imageID}
-              sshKeyName: ${infrastructureconfig.data.sshKeyName}
+                id: ${computeconfig.data.imageID}
+              sshKeyName: ${computeconfig.data.sshKeyName}
 
     - id: kubeadmcontrolplane
       template:
@@ -239,10 +260,10 @@ spec:
         spec:
           template:
             spec:
-              flavor: ${kubernetesconfig.data.generalWorkerFlavor}
+              flavor: ${computeconfig.data.generalWorkerFlavor}
               image:
-                id: ${infrastructureconfig.data.imageID}
-              sshKeyName: ${infrastructureconfig.data.sshKeyName}
+                id: ${computeconfig.data.imageID}
+              sshKeyName: ${computeconfig.data.sshKeyName}
 
     - id: kubeadmconfigtemplate
       template:
