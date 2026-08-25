@@ -36,6 +36,10 @@ into the selected spoke. Do not add Argo ApplicationSets or raw spoke packages.
   observability packages.
 - Immutable provider restrictions belong in graph-produced ConfigMaps.
 - Mutable operator choices belong in the narrow schema of the consuming RGD.
+- Spokes use one approved general worker flavor from immutable configuration;
+  do not add GPU, high-memory, or per-cluster worker-class selection.
+- Worker `minNodes` and `maxNodes` are mutable `SpokeCluster` inputs and must
+  not be duplicated in immutable configuration.
 - Imported OpenStack resources must use exact filters and
   `managementPolicy: unmanaged`.
 - Every Kustomize render and the workspace validation gate must pass.

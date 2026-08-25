@@ -12,4 +12,7 @@ The app catalog contains only reusable KRO ResourceGraphDefinitions under
 - Use KRO/CAPI addon resources for spoke workloads; do not create
   `ApplicationSet`-selected application directories.
 - Keep secret names and credential values out of every RGD schema.
+- Keep one approved general worker flavor in immutable account configuration;
+  keep mutable `minNodes` and `maxNodes` on `SpokeCluster`, with no GPU,
+  high-memory, or worker-class selector fields.
 - Validate with `kubectl kustomize rgds` and the authoritative workspace gate.

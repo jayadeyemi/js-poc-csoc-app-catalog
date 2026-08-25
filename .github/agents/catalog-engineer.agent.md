@@ -15,4 +15,7 @@ Argo ApplicationSets.
 
 Preserve exact unmanaged imports, immutable configuration blocks, narrow
 mutable schemas, namespace-restricted credentials, and deliberate lifecycle
-ordering. Run `kubectl kustomize rgds` and the workspace validation gate.
+ordering. A spoke has one approved general worker flavor in immutable account
+configuration; `minNodes` and `maxNodes` remain mutable on `SpokeCluster`.
+Do not add GPU, high-memory, or worker-class selection. Run
+`kubectl kustomize rgds` and the workspace validation gate.

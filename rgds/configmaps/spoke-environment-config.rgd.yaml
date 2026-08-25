@@ -20,7 +20,6 @@ spec:
         jsonPath: .status.environment
     spec:
       environment: string | required=true
-      nodeClass: string | default="general" enum="general,highmem,gpu"
       nodeCIDR: string | required=true
       podCIDR: string | default="192.168.0.0/16"
       serviceCIDR: string | default="10.96.0.0/12"
@@ -54,7 +53,6 @@ spec:
         immutable: true
         data:
           environment: ${schema.spec.environment}
-          nodeClass: ${schema.spec.nodeClass}
           networkConnectionName: '${schema.metadata.name + "-connection"}'
           podCIDR: ${schema.spec.podCIDR}
           serviceCIDR: ${schema.spec.serviceCIDR}
