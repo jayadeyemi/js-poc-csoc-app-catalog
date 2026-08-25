@@ -34,10 +34,6 @@ spec:
         controlPlaneCount: integer | default=1 minimum=1 maximum=3
         controlPlaneFlavor: string | required=true
         generalWorkerFlavor: string | required=true
-        highmemWorkerFlavor: string | required=true
-        gpuWorkerFlavor: string | required=true
-        minWorkers: integer | default=1 minimum=1 maximum=4
-        maxWorkers: integer | default=4 minimum=1 maximum=4
     status:
       ready: '${accountconfig.metadata.name != "" && infrastructureconfig.metadata.name != "" && kubernetesconfig.metadata.name != ""}'
       projectID: ${schema.spec.projectID}
@@ -93,7 +89,3 @@ spec:
           controlPlaneCount: ${string(schema.spec.kubernetes.controlPlaneCount)}
           controlPlaneFlavor: ${schema.spec.kubernetes.controlPlaneFlavor}
           generalWorkerFlavor: ${schema.spec.kubernetes.generalWorkerFlavor}
-          highmemWorkerFlavor: ${schema.spec.kubernetes.highmemWorkerFlavor}
-          gpuWorkerFlavor: ${schema.spec.kubernetes.gpuWorkerFlavor}
-          minWorkers: ${string(schema.spec.kubernetes.minWorkers)}
-          maxWorkers: ${string(schema.spec.kubernetes.maxWorkers)}

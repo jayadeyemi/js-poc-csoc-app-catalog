@@ -239,7 +239,7 @@ spec:
         spec:
           template:
             spec:
-              flavor: '${clusterconfig.data.nodeClass == "highmem" ? kubernetesconfig.data.highmemWorkerFlavor : (clusterconfig.data.nodeClass == "gpu" ? kubernetesconfig.data.gpuWorkerFlavor : kubernetesconfig.data.generalWorkerFlavor)}'
+              flavor: ${kubernetesconfig.data.generalWorkerFlavor}
               image:
                 id: ${infrastructureconfig.data.imageID}
               sshKeyName: ${infrastructureconfig.data.sshKeyName}
