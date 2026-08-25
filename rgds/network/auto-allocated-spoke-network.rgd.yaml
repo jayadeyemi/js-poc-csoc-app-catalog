@@ -23,7 +23,7 @@ spec:
         jsonPath: .status.routerID
     spec: {}
     status:
-      ready: '${network.?status.?id.orValue("") != "" && subnet.?status.?id.orValue("") != "" && router.?status.?id.orValue("") != ""}'
+      ready: '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       identityName: ${identity.metadata.name}
       networkID: '${network.?status.?id.orValue("")}'
       subnetID: '${subnet.?status.?id.orValue("")}'
@@ -50,7 +50,7 @@ spec:
           namespace: ${schema.metadata.namespace}
     - id: network
       readyWhen:
-        - '${network.?status.?id.orValue("") != ""}'
+        - '${network.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       template:
         apiVersion: openstack.k-orc.cloud/v1alpha1
         kind: Network
@@ -67,7 +67,7 @@ spec:
               name: ${infrastructureconfig.data.autoAllocatedNetworkName}
     - id: subnet
       readyWhen:
-        - '${subnet.?status.?id.orValue("") != ""}'
+        - '${subnet.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       template:
         apiVersion: openstack.k-orc.cloud/v1alpha1
         kind: Subnet
@@ -85,7 +85,7 @@ spec:
               networkRef: ${network.metadata.name}
     - id: router
       readyWhen:
-        - '${router.?status.?id.orValue("") != ""}'
+        - '${router.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
       template:
         apiVersion: openstack.k-orc.cloud/v1alpha1
         kind: Router

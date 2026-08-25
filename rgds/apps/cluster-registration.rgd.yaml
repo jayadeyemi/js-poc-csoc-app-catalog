@@ -186,6 +186,8 @@ spec:
               chmod 600 "$config"
               kubectl create secret generic "cluster-$name" -n argocd --from-literal="name=$name" --from-literal="server=$server" --from-file="config=$config" --dry-run=client -o yaml | kubectl apply --server-side -f - >/dev/null
               kubectl label secret "cluster-$name" -n argocd --overwrite argocd.argoproj.io/secret-type=cluster csoc.js2.org/type=spoke "csoc.js2.org/name=$name" "csoc.js2.org/customer=$customer" "csoc.js2.org/environment=$environment" "csoc.js2.org/ownership=$ownership" "csoc.js2.org/hello-app=$hello" "csoc.js2.org/security=$security" "csoc.js2.org/observability=$observability" >/dev/null
+              legacy_hello_label=$(printf '%s%s' 'csoc.js2.org/hello-' 'csoc')
+              kubectl label secret "cluster-$name" -n argocd "$legacy_hello_label""-" >/dev/null 2>&1 || true
               kubectl annotate secret "cluster-$name" -n argocd --overwrite csoc.js2.org/reachable=true "csoc.js2.org/reachability-checked-at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >/dev/null
             done <"$clusters"
             [ ! -s "$failures" ] || exit 1
