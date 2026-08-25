@@ -1,0 +1,116 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: autoallocatedspokenetwork
+  annotations:
+    argocd.argoproj.io/sync-wave: "-7"
+    kro.run/description: Non-owning import of the Jetstream2 allocation network topology
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: csoc.js2.org
+    kind: AutoAllocatedSpokeNetwork
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Network
+        type: string
+        jsonPath: .status.networkID
+      - name: Router
+        type: string
+        jsonPath: .status.routerID
+    spec: {}
+    status:
+      ready: '${network.?status.?id.orValue("") != "" && subnet.?status.?id.orValue("") != "" && router.?status.?id.orValue("") != ""}'
+      identityName: ${identity.metadata.name}
+      networkID: '${network.?status.?id.orValue("")}'
+      subnetID: '${subnet.?status.?id.orValue("")}'
+      routerID: '${router.?status.?id.orValue("")}'
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      externalRef:
+        apiVersion: csoc.js2.org/v1alpha1
+        kind: CSOCIdentity
+        metadata:
+          name: '${accountnamespace.metadata.labels["csoc.js2.org/identity"]}'
+    - id: infrastructureconfig
+      externalRef:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${identity.metadata.name + "-infrastructure-config"}'
+          namespace: ${schema.metadata.namespace}
+    - id: network
+      readyWhen:
+        - '${network.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata:
+          name: '${schema.metadata.name + "-network"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            filter:
+              name: ${infrastructureconfig.data.autoAllocatedNetworkName}
+    - id: subnet
+      readyWhen:
+        - '${subnet.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Subnet
+        metadata:
+          name: '${schema.metadata.name + "-subnet"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            filter:
+              name: ${infrastructureconfig.data.autoAllocatedSubnetName}
+              networkRef: ${network.metadata.name}
+    - id: router
+      readyWhen:
+        - '${router.?status.?id.orValue("") != ""}'
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Router
+        metadata:
+          name: '${schema.metadata.name + "-router"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: '${identity.metadata.name + "-cloud-config"}'
+          managementPolicy: unmanaged
+          import:
+            filter:
+              name: ${infrastructureconfig.data.autoAllocatedRouterName}
+    - id: connection
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-connection"}'
+          namespace: ${schema.metadata.namespace}
+        immutable: true
+        data:
+          networkType: shared
+          networkID: ${network.status.id}
+          subnetID: ${subnet.status.id}
+          routerID: ${router.status.id}
+          externalNetworkID: ${infrastructureconfig.data.externalNetworkID}
