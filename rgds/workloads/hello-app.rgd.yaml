@@ -71,7 +71,7 @@ spec:
                 app: hello-app
                 csoc.js2.org/managed: "true"
             spec:
-              replicas: ${schema.spec.replicas}
+              replicas: ${string(schema.spec.replicas)}
               selector:
                 matchLabels:
                   app: hello-app
