@@ -7,4 +7,5 @@ resources:
   - network/auto-allocated-spoke-network.rgd.yaml
   - network/dedicated-spoke-network.rgd.yaml
   - cluster/v1/spoke-cluster.rgd.yaml
+  - workloads/csoc-hello-app.rgd.yaml
   - workloads/hello-app.rgd.yaml

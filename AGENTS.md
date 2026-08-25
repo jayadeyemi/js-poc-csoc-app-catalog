@@ -2,7 +2,7 @@
 
 This repository is definitions-only. It publishes reusable KRO
 `ResourceGraphDefinition` objects; all graph instances live in
-`js-poc-csoc-fleet/accounts/`.
+`js-poc-csoc-fleet/`.
 
 GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
@@ -13,7 +13,7 @@ rgds/
   configmaps/          write-once provider and spoke configuration blocks
   cluster/v1/          SpokeIdentity and SpokeCluster graphs
   network/             auto-allocated imports and dedicated network graphs
-  workloads/           direct CAPI addon workload graphs
+  workloads/           direct CSOC and CAPI addon workload graphs
   kustomization.yaml   the only Argo source entrypoint
 ```
 
@@ -25,9 +25,10 @@ immutable configuration, and account-specific admission restrictions.
 through CAPI/CAPO. It never installs OpenStack. ORC manages or imports Neutron
 resources according to each network graph's management policy.
 
-`HelloApp` demonstrates the workload pattern: the graph creates a CAPI
-`ClusterResourceSet` in the management cluster, which reconciles the workload
-into the selected spoke. Do not add Argo ApplicationSets or raw spoke packages.
+`CSOCHelloApp` deploys the CSOC-local Hello workload directly. `HelloApp`
+creates a CAPI `ClusterResourceSet` in the management cluster, which reconciles
+the workload into the selected spoke. Both expose only an internal OpenStack
+load balancer. Do not add Argo ApplicationSets or raw spoke packages.
 
 ## Boundaries
 
@@ -42,4 +43,7 @@ into the selected spoke. Do not add Argo ApplicationSets or raw spoke packages.
   not be duplicated in immutable configuration.
 - Imported OpenStack resources must use exact filters and
   `managementPolicy: unmanaged`.
+- Application Services must remain internal-only unless a separate reviewed
+  public-access design supplies a restricted source CIDR and proves that the
+  cloud enforces it. Never reuse a CAPO-owned API load balancer for workloads.
 - Every Kustomize render and the workspace validation gate must pass.
