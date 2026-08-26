@@ -16,14 +16,19 @@ spec:
         type: boolean
         jsonPath: .status.ready
     spec:
-      target: string | default="csoc" enum="csoc"
+      # `spoke` is retained only because KRO forbids removing an existing enum
+      # value from the generated CRD. It is intentionally inert; use
+      # SpokeHelloApp for central spoke delivery.
+      target: string | default="spoke" enum="csoc,spoke"
       replicas: integer | default=2 minimum=1 maximum=3
     status:
-      ready: '${deployment.?status.?availableReplicas.orValue(0) >= deployment.spec.replicas && service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}'
-      namespace: ${appnamespace.metadata.name}
+      ready: '${schema.spec.target == "csoc" && deployment.?status.?availableReplicas.orValue(0) >= schema.spec.replicas && service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}'
+      namespace: '${schema.spec.target == "csoc" ? appnamespace.metadata.name : ""}'
 
   resources:
     - id: appnamespace
+      includeWhen:
+        - ${schema.spec.target == "csoc"}
       readyWhen:
         - ${appnamespace.?status.?phase.orValue("") == "Active"}
       template:
@@ -36,6 +41,8 @@ spec:
             csoc.js2.org/target: csoc
 
     - id: html
+      includeWhen:
+        - ${schema.spec.target == "csoc"}
       template:
         apiVersion: v1
         kind: ConfigMap
@@ -51,6 +58,8 @@ spec:
             </html>
 
     - id: deployment
+      includeWhen:
+        - ${schema.spec.target == "csoc"}
       readyWhen:
         - ${deployment.?status.?availableReplicas.orValue(0) >= deployment.spec.replicas}
       template:
@@ -107,6 +116,8 @@ spec:
                     name: ${html.metadata.name}
 
     - id: service
+      includeWhen:
+        - ${schema.spec.target == "csoc"}
       readyWhen:
         - ${service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}
       template:
