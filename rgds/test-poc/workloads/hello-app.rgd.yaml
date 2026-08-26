@@ -15,16 +15,12 @@ spec:
       - name: Ready
         type: boolean
         jsonPath: .status.ready
-      - name: Endpoint
-        type: string
-        jsonPath: .status.endpoint
     spec:
       target: string | default="csoc" enum="csoc"
       replicas: integer | default=2 minimum=1 maximum=3
     status:
       ready: '${deployment.?status.?availableReplicas.orValue(0) >= deployment.spec.replicas && service.?status.?loadBalancer.?ingress.orValue([]).size() > 0}'
       namespace: ${appnamespace.metadata.name}
-      endpoint: '${service.?status.?loadBalancer.?ingress.orValue([]).size() > 0 ? service.status.loadBalancer.ingress[0].ip.orValue(service.status.loadBalancer.ingress[0].hostname.orValue("")) : ""}'
 
   resources:
     - id: appnamespace
