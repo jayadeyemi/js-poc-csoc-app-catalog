@@ -117,31 +117,6 @@ spec:
           selector:
             app: hello-app
           type: LoadBalancer
-    - id: spokeaccountnamespace
-      includeWhen:
-        - ${schema.spec.target == "spoke"}
-      externalRef:
-        apiVersion: v1
-        kind: Namespace
-        metadata:
-          name: ${schema.metadata.namespace}
-    - id: spokeidentity
-      includeWhen:
-        - ${schema.spec.target == "spoke"}
-      externalRef:
-        apiVersion: csoc.js2.org/v1alpha1
-        kind: SpokeIdentity
-        metadata:
-          name: '${spokeaccountnamespace.metadata.labels["csoc.js2.org/identity"]}'
-    - id: spokenetworkconfig
-      includeWhen:
-        - ${schema.spec.target == "spoke"}
-      externalRef:
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          name: '${spokeidentity.metadata.name + "-network-service-config"}'
-          namespace: ${schema.metadata.namespace}
     - id: spokenetworkconnection
       includeWhen:
         - ${schema.spec.target == "spoke"}
@@ -247,7 +222,7 @@ spec:
               selector:
                 app: hello-app
               loadBalancerSourceRanges:
-                - ${spokenetworkconfig.data.applicationAllowedCIDR}
+                - ${schema.spec.applicationAllowedCIDR}
               ports:
                 - name: http
                   port: 80
@@ -289,6 +264,7 @@ spec:
     kind: HelloApp
     scope: Namespaced
     spec:
+      applicationAllowedCIDR: string | default="127.0.0.1/32"
       replicas: integer | default=2 minimum=1 maximum=3
       target: string | default="spoke" enum="csoc,spoke"
     status:

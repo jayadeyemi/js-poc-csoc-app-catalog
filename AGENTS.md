@@ -36,7 +36,7 @@ generated connection ConfigMap; it never accepts a fleet-supplied keypair name.
 `HelloApp` is the only Hello API. `target: csoc` deploys directly through an
 internal OpenStack load balancer; `target: spoke` creates a CAPI
 `ClusterResourceSet` and a separate public Octavia load balancer restricted to
-the immutable account `applicationAllowedCIDR`. Do not add Argo ApplicationSets
+the mutable HelloApp `applicationAllowedCIDR`. Do not add Argo ApplicationSets
 or raw spoke packages.
 
 ## Boundaries
