@@ -19,3 +19,5 @@ resources:
   - test-poc/security/spoke-security-group.rgd.yaml
   - test-poc/storage/spoke-volume.rgd.yaml
   - test-poc/workloads/hello-app.rgd.yaml
+  - test-poc/workloads/spoke-hello-app.rgd.yaml
+  - test-poc/workloads/spoke-gitops.rgd.yaml

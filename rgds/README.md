@@ -29,7 +29,8 @@ Write-once fields include project/image/external-network IDs, keypair, flavors,
 Kubernetes version/control-plane count, API source CIDR, volume type, LB
 policy/provider, node/pod/service CIDRs, MTU, DHCP, and port security. The only
 ordinary mutable fleet fields are `SpokeCluster.spec.kubernetes.minNodes` and
-`maxNodes`; `HelloApp.spec.replicas` is mutable workload scale.
+`maxNodes`; workload replica and repository connection fields are explicit in
+their workload graph instances.
 
 ### test-poc/cluster/v1/
 
@@ -64,7 +65,12 @@ Nova server-group, Neutron security-group, and Cinder volume graphs live under
 
 | File | Kind | Delivery mechanism |
 |------|------|-------------------|
-| `hello-app.rgd.yaml` | `HelloApp` | `target: csoc` creates direct resources; `target: spoke` uses a CAPI `ClusterResourceSet` |
+| `hello-app.rgd.yaml` | `HelloApp` | Direct resources in the CSOC cluster |
+| `spoke-hello-app.rgd.yaml` | `SpokeHelloApp` | CSOC-managed CAPI `ClusterResourceSet` delivery |
+| `spoke-gitops.rgd.yaml` | `SpokeGitOps` | CAPI addon installs spoke-local Argo CD and a repository root |
 
-There is exactly one Hello RGD. Both targets expose an internal OpenStack load
-balancer only. No floating IPs.
+The APIs are deliberately separate so one object has one ownership model. The
+CSOC Hello uses an internal load balancer. Centrally delivered spoke Hello uses
+a separate source-restricted public load balancer. `SpokeGitOps` points only to
+a public HTTPS repository; private-repository credentials remain an explicit
+out-of-band extension.

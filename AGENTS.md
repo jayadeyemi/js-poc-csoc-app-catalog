@@ -17,7 +17,7 @@ rgds/
     network/           imported, isolated, shared-router, and routed graphs
     security/          optional Neutron policy graphs
     storage/           optional Cinder graphs
-    workloads/         conditional direct CSOC/CAPI addon workload graphs
+    workloads/         direct CSOC, central CAPI, and spoke-local GitOps graphs
   kustomization.yaml   the only Argo source entrypoint
 ```
 
@@ -33,11 +33,11 @@ resources according to each network graph's management policy.
 key stored in immutable configuration. `SpokeCluster` consumes only its
 generated connection ConfigMap; it never accepts a fleet-supplied keypair name.
 
-`HelloApp` is the only Hello API. `target: csoc` deploys directly through an
-internal OpenStack load balancer; `target: spoke` creates a CAPI
+`HelloApp` deploys only in the CSOC cluster. `SpokeHelloApp` creates a CAPI
 `ClusterResourceSet` and a separate public Octavia load balancer restricted to
-the mutable HelloApp `applicationAllowedCIDR`. Do not add Argo ApplicationSets
-or raw spoke packages.
+its mutable `applicationAllowedCIDR`. `SpokeGitOps` installs spoke-local Argo CD
+through a `HelmChartProxy` and points a root Application at a public HTTPS
+repository. Do not combine those owners for one workload.
 
 ## Boundaries
 
