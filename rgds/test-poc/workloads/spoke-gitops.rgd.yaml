@@ -1,0 +1,102 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokegitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    kro.run/description: Install spoke-local Argo CD and point its root Application at a public Git repository
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: apps.csoc.js2.org
+    kind: SpokeGitOps
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Cluster
+        type: string
+        jsonPath: .status.clusterName
+      - name: Repository
+        type: string
+        jsonPath: .status.repositoryURL
+    spec:
+      clusterName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      repositoryURL: string | required=true pattern="^https://[^[:space:]]+$"
+      targetRevision: string | default="main" pattern="^[A-Za-z0-9._/-]+$"
+      path: string | default="." pattern="^[A-Za-z0-9._/-]+$"
+      destinationNamespace: string | default="default" pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    status:
+      ready: '${argocd.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
+      clusterName: ${schema.spec.clusterName}
+      repositoryURL: ${schema.spec.repositoryURL}
+      targetRevision: ${schema.spec.targetRevision}
+      path: ${schema.spec.path}
+
+  resources:
+    - id: cluster
+      externalRef:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${schema.spec.clusterName}
+          namespace: ${schema.metadata.namespace}
+
+    - id: argocd
+      readyWhen:
+        - ${argocd.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1alpha1
+        kind: HelmChartProxy
+        metadata:
+          name: '${schema.metadata.name + "-argocd"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.spec.clusterName}
+          repoURL: https://argoproj.github.io/argo-helm
+          chartName: argo-cd
+          version: 10.4.0
+          releaseName: argocd
+          namespace: argocd
+          reconcileStrategy: Continuous
+          options:
+            wait: true
+            waitForJobs: true
+            timeout: 15m
+            install:
+              createNamespace: true
+              includeCRDs: true
+          valuesTemplate: |
+            applicationSet:
+              replicas: 0
+            configs:
+              params:
+                server.insecure: true
+            server:
+              service:
+                type: ClusterIP
+            extraObjects:
+              - apiVersion: argoproj.io/v1alpha1
+                kind: Application
+                metadata:
+                  name: spoke-root
+                  namespace: argocd
+                spec:
+                  project: default
+                  source:
+                    repoURL: ${schema.spec.repositoryURL}
+                    targetRevision: ${schema.spec.targetRevision}
+                    path: ${schema.spec.path}
+                  destination:
+                    server: https://kubernetes.default.svc
+                    namespace: ${schema.spec.destinationNamespace}
+                  syncPolicy:
+                    automated:
+                      prune: true
+                      selfHeal: true
+                    syncOptions:
+                      - CreateNamespace=true
+                      - ServerSideApply=true

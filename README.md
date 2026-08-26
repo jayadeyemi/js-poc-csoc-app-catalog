@@ -14,7 +14,7 @@ rgds/
     network/                imported, isolated, shared-router, and routed graphs
     security/               Neutron security graphs
     storage/                Cinder storage graphs
-    workloads/              conditional CSOC-local/CAPI addon workload graph
+    workloads/              CSOC-local, centrally delivered, and spoke GitOps graphs
 ```
 
 ## RGD summary
@@ -27,15 +27,20 @@ rgds/
 | `test-poc/compute/` | `SpokeServerGroup` | Nova placement group using the immutable approved policy |
 | `test-poc/security/` | `SpokeSecurityGroup` | Mutable, bounded Neutron workload ingress policy |
 | `test-poc/storage/` | `SpokeVolume` | Managed Cinder volume using immutable type/AZ restrictions |
-| `test-poc/workloads/hello-app.rgd.yaml` | `HelloApp` | Direct CSOC workload or CAPI `ClusterResourceSet`, selected by `spec.target` |
+| `test-poc/workloads/` | `HelloApp`, `SpokeHelloApp`, `SpokeGitOps` | Direct CSOC workload, central CAPI delivery, or spoke-local Argo repository root |
 
 ## Boundaries
 
 - No RGD instances, credentials, account IDs, or fleet inventory here.
-- No Argo `Application`, `ApplicationSet`, baseline, or observability packages.
+- Argo objects are permitted only inside the explicit `SpokeGitOps` bootstrap
+  graph; ordinary catalog and fleet resources must not add orphan Applications.
 - Imported OpenStack resources must use exact filters and `managementPolicy: unmanaged`.
-- Application Services are internal OpenStack load balancers only — no floating IPs, no reuse of CAPO API load balancers.
+- Application Services never reuse CAPO API load balancers. Public spoke
+  Services require an exact reviewed source CIDR.
 - Worker `minNodes`/`maxNodes` are mutable `SpokeCluster` inputs; do not bake them into immutable config.
 - An immutable ConfigMap is a handoff block, not a mutable settings store. Replace
   its graph instance only after every consumer has been retired.
 - Every `kubectl kustomize rgds` render and `make validate` must pass before merging.
+
+Every RGD has a paired `.rgd.md` file beside it describing inputs, owned
+resources, external references, consumers, and deletion behavior.
