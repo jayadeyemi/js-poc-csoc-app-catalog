@@ -26,7 +26,8 @@ spec:
         minNodes: integer | default=2 minimum=1 maximum=4
         maxNodes: integer | default=4 minimum=1 maximum=4
     status:
-      ready: '${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
+      ready: '${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
+      cloudConfigReady: '${cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}'
       addonsReady: '${calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
       autoscalerReady: ${autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}
       endpoint: '${cluster.?spec.?controlPlaneEndpoint.?host.orValue("") + (cluster.?spec.?controlPlaneEndpoint.?port.orValue(0) > 0 ? ":" + string(cluster.spec.controlPlaneEndpoint.port) : "")}'
@@ -171,6 +172,12 @@ spec:
               image:
                 id: ${computeconfig.data.imageID}
               sshKeyName: ${keypairconnection.data.keypairName}
+              rootVolume:
+                sizeGiB: 20
+                type: ${storageconfig.data.volumeType}
+                availabilityZone:
+                  from: Name
+                  name: ${storageconfig.data.availabilityZone}
 
     - id: kubeadmcontrolplane
       template:
@@ -271,6 +278,12 @@ spec:
               image:
                 id: ${computeconfig.data.imageID}
               sshKeyName: ${keypairconnection.data.keypairName}
+              rootVolume:
+                sizeGiB: 20
+                type: ${storageconfig.data.volumeType}
+                availabilityZone:
+                  from: Name
+                  name: ${storageconfig.data.availabilityZone}
 
     - id: kubeadmconfigtemplate
       template:

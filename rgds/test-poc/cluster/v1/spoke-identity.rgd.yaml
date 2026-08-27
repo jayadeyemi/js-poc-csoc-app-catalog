@@ -21,7 +21,8 @@ spec:
     spec:
       credentialPolicy: string | default="restricted" enum="restricted"
     status:
-      ready: '${accountnamespace.?status.?phase.orValue("") == "Active"}'
+      ready: '${accountnamespace.?status.?phase.orValue("") == "Active" && cloudconfigsecret.metadata.name != "" && workloadcloudconfigsecret.metadata.name != ""}'
+      credentialsReady: '${cloudconfigsecret.metadata.name != "" && workloadcloudconfigsecret.metadata.name != ""}'
       namespace: ${accountnamespace.metadata.name}
       identityName: ${openstackidentity.metadata.name}
       projectID: ${trustedaccountconfig.data.projectID}
@@ -138,6 +139,20 @@ spec:
           namespace: ${accountnamespace.metadata.name}
         immutable: true
         data: ${trustedkubernetesconfig.data}
+    - id: cloudconfigsecret
+      externalRef:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: '${schema.metadata.name + "-cloud-config"}'
+          namespace: ${accountnamespace.metadata.name}
+    - id: workloadcloudconfigsecret
+      externalRef:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: '${schema.metadata.name + "-workload-cloud-config"}'
+          namespace: ${accountnamespace.metadata.name}
     - id: openstackidentity
       template:
         apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
