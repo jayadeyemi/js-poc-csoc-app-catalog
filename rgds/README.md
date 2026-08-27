@@ -68,6 +68,8 @@ Nova server-group, Neutron security-group, and Cinder volume graphs live under
 | `hello-app.rgd.yaml` | `HelloApp` | Direct resources in the CSOC cluster |
 | `spoke-hello-app.rgd.yaml` | `SpokeHelloApp` | CSOC-managed CAPI `ClusterResourceSet` delivery |
 | `spoke-gitops.rgd.yaml` | `SpokeGitOps` | CAPI addon installs spoke-local Argo CD and a repository root |
+| `spoke-argocd.rgd.yaml` | `SpokeArgoCD` | CAPI addon installs spoke-local Argo CD independently of applications |
+| `spoke-argo-application.rgd.yaml` | `SpokeArgoApplication` | Reconciled CAPI delivery of one pinned root Application after Argo is ready |
 
 The APIs are deliberately separate so one object has one ownership model. The
 CSOC Hello uses an internal load balancer. Centrally delivered spoke Hello uses

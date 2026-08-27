@@ -1,0 +1,109 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokeargoapplication
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    kro.run/description: Reconcile one spoke-local Argo CD root Application from a pinned public Git revision
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: apps.csoc.js2.org
+    kind: SpokeArgoApplication
+    scope: Namespaced
+    additionalPrinterColumns:
+      - name: Ready
+        type: boolean
+        jsonPath: .status.ready
+      - name: Cluster
+        type: string
+        jsonPath: .status.clusterName
+      - name: Revision
+        type: string
+        jsonPath: .status.targetRevision
+    spec:
+      clusterName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      argoCDName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      repositoryURL: string | required=true pattern="^https://[^[:space:]]+$"
+      targetRevision: string | required=true pattern="^[0-9a-f]{40}$"
+      path: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      destinationNamespace: string | default="argocd" pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    status:
+      ready: '${resourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}'
+      clusterName: ${schema.spec.clusterName}
+      repositoryURL: ${schema.spec.repositoryURL}
+      targetRevision: ${schema.spec.targetRevision}
+      path: ${schema.spec.path}
+
+  resources:
+    - id: cluster
+      externalRef:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${schema.spec.clusterName}
+          namespace: ${schema.metadata.namespace}
+
+    - id: argocd
+      readyWhen:
+        - ${argocd.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      externalRef:
+        apiVersion: addons.cluster.x-k8s.io/v1alpha1
+        kind: HelmChartProxy
+        metadata:
+          name: '${schema.spec.argoCDName + "-argocd"}'
+          namespace: ${schema.metadata.namespace}
+
+    - id: application
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-argo-application"}'
+          namespace: ${schema.metadata.namespace}
+          annotations:
+            csoc.js2.org/argocd-proxy: ${argocd.metadata.name}
+        data:
+          application.yaml: |
+            apiVersion: argoproj.io/v1alpha1
+            kind: Application
+            metadata:
+              name: ${schema.metadata.name}
+              namespace: argocd
+              labels:
+                csoc.js2.org/managed: "true"
+                csoc.js2.org/spoke-cluster: ${schema.spec.clusterName}
+            spec:
+              project: default
+              source:
+                repoURL: ${schema.spec.repositoryURL}
+                targetRevision: ${schema.spec.targetRevision}
+                path: ${schema.spec.path}
+              destination:
+                server: https://kubernetes.default.svc
+                namespace: ${schema.spec.destinationNamespace}
+              syncPolicy:
+                automated:
+                  prune: true
+                  selfHeal: true
+                syncOptions:
+                  - CreateNamespace=true
+                  - ServerSideApply=true
+
+    - id: resourceset
+      readyWhen:
+        - ${resourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}
+      template:
+        apiVersion: addons.cluster.x-k8s.io/v1beta2
+        kind: ClusterResourceSet
+        metadata:
+          name: '${schema.metadata.name + "-argo-application"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          strategy: Reconcile
+          clusterSelector:
+            matchLabels:
+              csoc.js2.org/spoke-cluster: ${schema.spec.clusterName}
+          resources:
+            - kind: ConfigMap
+              name: ${application.metadata.name}

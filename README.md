@@ -27,7 +27,7 @@ rgds/
 | `test-poc/compute/` | `SpokeServerGroup` | Nova placement group using the immutable approved policy |
 | `test-poc/security/` | `SpokeSecurityGroup` | Mutable, bounded Neutron workload ingress policy |
 | `test-poc/storage/` | `SpokeVolume` | Managed Cinder volume using immutable type/AZ restrictions |
-| `test-poc/workloads/` | `HelloApp`, `SpokeHelloApp`, `SpokeGitOps` | Direct CSOC workload, central CAPI delivery, or spoke-local Argo repository root |
+| `test-poc/workloads/` | `HelloApp`, `SpokeHelloApp`, `SpokeArgoCD`, `SpokeArgoApplication`, `SpokeGitOps` | Direct CSOC workload, central CAPI delivery, or modular/legacy spoke-local Argo ownership |
 
 ## Boundaries
 
