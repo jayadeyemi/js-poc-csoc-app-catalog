@@ -1,5 +1,17 @@
 # js-poc-csoc-app-catalog
 
+## API evolution invariants
+
+- Branches promote `environment/dev` to staging to prod through coordinated
+  pull requests; do not point one CSOC at another environment's catalog branch.
+- Additive schema changes retain old defaults and old-instance fixtures.
+- KRO ResourceGraphDefinition API identity is treated as immutable. A breaking
+  schema or ownership change gets a new Kind/RGD, dual-run fixtures, a migration
+  procedure, a rollback window, and a separately reviewed retirement.
+- Workload graphs deploy into the spoke through reconciled CAPI addon resources
+  or spoke-local GitOps. They must not put application workloads on a CSOC.
+- Pin charts/images/revisions and expose readiness from real downstream status.
+
 This repository is definitions-only. It publishes reusable KRO
 `ResourceGraphDefinition` objects; all graph instances live in
 `js-poc-csoc-fleet/`.
