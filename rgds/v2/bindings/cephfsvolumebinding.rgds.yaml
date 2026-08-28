@@ -1,0 +1,32 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: cephfsvolumebinding.delivery.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-6"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: delivery.csoc.js2.org
+    kind: CephFSVolumeBinding
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      addonRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      shareID: string | required=true pattern="^[0-9a-f-]{36}$"
+      monitorEndpoints: 'string | required=true pattern="^[A-Za-z0-9.,: -]+$"'
+      secretBundleRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      claimName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      capacityGiB: integer | required=true minimum=1
+    status: {ready: '${contract.metadata.name != ""}', claimName: '${schema.spec.claimName}', shareID: '${schema.spec.shareID}'}
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: addon
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: CephFSAddon, metadata: {name: '${schema.spec.addonRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: secrets
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: SecretBundle, metadata: {name: '${schema.spec.secretBundleRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: contract
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}', annotations: {argocd.argoproj.io/sync-options: Prune=false}}
+        immutable: true
+        data: {shareID: '${schema.spec.shareID}', monitorEndpoints: '${schema.spec.monitorEndpoints}', claimName: '${schema.spec.claimName}', capacityGiB: '${string(schema.spec.capacityGiB)}', destinationNamespace: '${boundary.spec.destinationNamespace}'}

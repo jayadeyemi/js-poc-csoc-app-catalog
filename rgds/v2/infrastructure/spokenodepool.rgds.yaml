@@ -1,0 +1,96 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokenodepool.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Independently owned CAPI MachineDeployment with mutable bounds
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: SpokeNodePool
+    scope: Namespaced
+    spec:
+      clusterRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      profileRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      class: string | required=true enum="system,cpu,gpu,mig,build"
+      minNodes: integer | required=true minimum=0 maximum=100
+      maxNodes: integer | required=true minimum=1 maximum=100
+      failureDomain: string | required=true pattern="^[A-Za-z0-9._-]+$"
+      capacity:
+        cpu: string | required=true pattern="^[1-9][0-9]*m?$"
+        memory: string | required=true pattern="^[1-9][0-9]*(Mi|Gi)$"
+        gpu: string | default="0" pattern="^[0-9]+$"
+    status:
+      ready: '${profile.spec.class == schema.spec.class && profile.spec.failureDomain == schema.spec.failureDomain && machinedeployment.?status.?availableReplicas.orValue(0) >= schema.spec.minNodes}'
+      replicas: '${machinedeployment.?status.?replicas.orValue(0)}'
+      class: ${schema.spec.class}
+      clusterName: ${cluster.metadata.name}
+      profileName: ${profile.metadata.name}
+  resources:
+    - id: cluster
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: WorkloadCluster, metadata: {name: '${schema.spec.clusterRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: profile
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: MachineProfile, metadata: {name: '${schema.spec.profileRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: machinetemplate
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackMachineTemplate
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          template:
+            spec:
+              flavorID: ${profile.spec.flavorID}
+              image: {id: '${profile.spec.imageID}'}
+              rootVolume: {sizeGiB: '${profile.spec.rootSizeGiB}', type: '${profile.spec.volumeTypeID}'}
+    - id: kubeadmtemplate
+      template:
+        apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+        kind: KubeadmConfigTemplate
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          template:
+            spec:
+              joinConfiguration:
+                nodeRegistration:
+                  kubeletExtraArgs:
+                    cloud-provider: external
+                    node-labels: '${"csoc.js2.org/pool-class=" + schema.spec.class + ",csoc.js2.org/pool-name=" + schema.metadata.name}'
+                  taints:
+                    - key: csoc.js2.org/pool-class
+                      value: ${schema.spec.class}
+                      effect: NoSchedule
+    - id: machinedeployment
+      template:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: MachineDeployment
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+          annotations:
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size: ${string(schema.spec.minNodes)}
+            cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size: ${string(schema.spec.maxNodes)}
+            capacity.cluster-autoscaler.kubernetes.io/cpu: ${schema.spec.capacity.cpu}
+            capacity.cluster-autoscaler.kubernetes.io/memory: ${schema.spec.capacity.memory}
+            capacity.cluster-autoscaler.kubernetes.io/gpu: ${schema.spec.capacity.gpu}
+            capacity.cluster-autoscaler.kubernetes.io/labels: '${"csoc.js2.org/pool-class=" + schema.spec.class + ",csoc.js2.org/pool-name=" + schema.metadata.name}'
+            capacity.cluster-autoscaler.kubernetes.io/taints: '${"csoc.js2.org/pool-class=" + schema.spec.class + ":NoSchedule"}'
+          labels:
+            csoc.js2.org/pool-class: ${schema.spec.class}
+            csoc.js2.org/pool-name: ${schema.metadata.name}
+        spec:
+          clusterName: ${cluster.metadata.name}
+          selector: {matchLabels: null}
+          template:
+            metadata:
+              labels:
+                csoc.js2.org/pool-class: ${schema.spec.class}
+                csoc.js2.org/pool-name: ${schema.metadata.name}
+            spec:
+              clusterName: ${cluster.metadata.name}
+              version: ${cluster.spec.kubernetesVersion}
+              failureDomain: ${schema.spec.failureDomain}
+              bootstrap:
+                configRef: {apiVersion: bootstrap.cluster.x-k8s.io/v1beta1, kind: KubeadmConfigTemplate, name: '${kubeadmtemplate.metadata.name}', namespace: '${schema.metadata.namespace}'}
+              infrastructureRef: {apiVersion: infrastructure.cluster.x-k8s.io/v1beta1, kind: OpenStackMachineTemplate, name: '${machinetemplate.metadata.name}', namespace: '${schema.metadata.namespace}'}

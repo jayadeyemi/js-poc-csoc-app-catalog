@@ -1,0 +1,51 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: binderbuildinstance.services.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-5"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: services.csoc.js2.org
+    kind: BinderBuildInstance
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      jupyterHubRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      buildPoolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      registryStorageRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      secretBundleRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      registryCacheRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      privilegedApproved: boolean | required=true
+      binderImage: string | required=true pattern="^[A-Za-z0-9._/:@-]+@sha256:[0-9a-f]{64}$"
+      builderImage: string | required=true pattern="^[A-Za-z0-9._/:@-]+@sha256:[0-9a-f]{64}$"
+      configRepository: string | required=true pattern="^https://github\\.com/.+$"
+      configCommit: string | required=true pattern="^[0-9a-f]{40}$"
+      configPath: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      chartVersion: string | required=true pattern="^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    status: {ready: '${boundary.spec.serviceType == "binder-build" && buildpool.spec.class == "build" && buildpool.spec.clusterRef.name == boundary.status.clusterName && schema.spec.privilegedApproved && application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}', health: '${application.?status.?health.?status.orValue("Progressing")}', syncRevision: '${application.?status.?sync.?revision.orValue("")}' }
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: hub
+      externalRef: {apiVersion: services.csoc.js2.org/v1alpha1, kind: JupyterHubInstance, metadata: {name: '${schema.spec.jupyterHubRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: buildpool
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNodePool, metadata: {name: '${schema.spec.buildPoolRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: secrets
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: SecretBundle, metadata: {name: '${schema.spec.secretBundleRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd}
+        spec:
+          project: ${boundary.status.projectName}
+          source:
+            repoURL: ${schema.spec.configRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: ${schema.spec.configPath}
+            kustomize:
+              images:
+                - '${"binder-image=" + schema.spec.binderImage}'
+                - '${"builder-image=" + schema.spec.builderImage}'
+          destination: {name: '${boundary.status.clusterName}', namespace: '${boundary.spec.destinationNamespace}'}
+          syncPolicy: {automated: {prune: true, selfHeal: true}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}
+          revisionHistoryLimit: 3

@@ -7,6 +7,10 @@ Definitions-only library of reusable KRO `ResourceGraphDefinition` objects. All 
 ```
 rgds/
   kustomization.yaml        single Argo source entrypoint
+  v2/                       current one-file-per-RGD API generation
+    infrastructure/         account, cluster, network, pool, and foundation APIs
+    bindings/               application, data, addon, endpoint, and auth contracts
+    services/               typed workload delivery APIs
   test-poc/                 tested OpenStack profile library
     configmaps/             write-once provider and spoke configuration blocks
     cluster/v1/             SpokeIdentity and SpokeCluster graphs
@@ -21,6 +25,9 @@ rgds/
 
 | RGD | Kind | Purpose |
 |-----|------|---------|
+| `v2/infrastructure/` | seven infrastructure APIs | Account, immutable compute/network contracts, clusters, independent node pools, foundation, and registration |
+| `v2/bindings/` | ten delivery APIs | Application boundary, secret/storage/addon, endpoint, and Hub authentication bindings |
+| `v2/services/` | six service APIs | Smoke, JupyterHub, monitoring, registry cache, Binder, and Jupyter Outpost delivery |
 | `test-poc/configmaps/` | four config APIs | Account/service, spoke environment, exact topology, and shared-network write-once blocks |
 | `test-poc/cluster/v1/` | `SpokeIdentity`, `SpokeCluster` | Account namespace, `OpenStackClusterIdentity`, and CAPI/CAPO spoke cluster |
 | `test-poc/network/` | seven network kinds | Auto/shared/exact imports, isolated L2, shared-router subnet, or dedicated routed topologies |
@@ -41,6 +48,13 @@ rgds/
 - An immutable ConfigMap is a handoff block, not a mutable settings store. Replace
   its graph instance only after every consumer has been retired.
 - Every `kubectl kustomize rgds` render and `make validate` must pass before merging.
+- Publish v2 RGDs in dependency sync waves and require every RGD plus its latest
+  GraphRevision to be Active/Ready under KRO 0.9.3 aggregation RBAC.
+- The first supported service matrix is smoke, dummy/ClusterIP/no-TLS
+  JupyterHub, monitoring without Grafana/Alertmanager, and retained Cinder.
+  Registry cache is render-only; GPU/MIG, CephFS, S3, Binder, and Outpost fail closed.
 
-Every RGD has a paired `.rgd.md` file beside it describing inputs, owned
-resources, external references, consumers, and deletion behavior.
+Each v2 manifest contains exactly one RGD and is listed explicitly through
+the nested v2 Kustomizations; its shared contracts and retirement rules are in
+`rgds/v2/README.md`. Compatibility RGDs retain their paired `.rgd.md`
+documentation beside each manifest.

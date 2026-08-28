@@ -5,6 +5,23 @@ entrypoint for the Argo `rgds` Application. The tested Jetstream2 profile is
 grouped below `test-poc/`; its generated kinds remain reusable across any
 number of `SpokeIdentity` account instances.
 
+## Second-generation APIs
+
+`v2/` is the current architecture. It deliberately uses the new
+`infra.csoc.js2.org`, `delivery.csoc.js2.org`, and `services.csoc.js2.org`
+groups and does not extend `SpokeCluster` or any other first-generation Kind.
+Clusters, independent node pools, bindings, and application tuples therefore
+have separate lifecycles. See [`v2/README.md`](v2/README.md) for the contract
+and retirement rules.
+
+Each v2 RGD is a single YAML document in one of three ownership directories:
+`v2/infrastructure/`, `v2/bindings/`, or `v2/services/`. The root
+`kustomization.yaml` lists every definition explicitly; adding an RGD requires
+adding its individual manifest there as part of the same change.
+
+Everything below `test-poc/` is compatibility-only and remains installed for
+dual-run migration and rollback.
+
 ## Subdirectories
 
 ### test-poc/configmaps/

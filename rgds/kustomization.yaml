@@ -1,6 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # Second-generation APIs. Each RGD is a separate manifest so API ownership
+  # and review history remain independent during migration.
+  - v2
   - test-poc/cluster/v1/spoke-cluster.rgd.yaml
   - test-poc/cluster/v1/spoke-identity.rgd.yaml
   - test-poc/configmaps/immutable-spoke-config.rgd.yaml

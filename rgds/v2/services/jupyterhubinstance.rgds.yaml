@@ -1,0 +1,74 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: jupyterhubinstance.services.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-5"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: services.csoc.js2.org
+    kind: JupyterHubInstance
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      systemPoolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      cpuPoolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      authRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      endpointRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      hubDatabaseRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      homeStorageRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      gpuPoolRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      migPoolRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      cephFSHomesRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      s3DatasetsRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      binderBuildRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      outpostRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      configRepository: string | required=true pattern="^https://github\\.com/.+$"
+      configCommit: string | required=true pattern="^[0-9a-f]{40}$"
+      configPath: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      chartVersion: string | required=true pattern="^4\\.3\\.4$"
+    status: {ready: '${boundary.spec.serviceType == "jupyterhub" && systempool.spec.class == "system" && cpupool.spec.class == "cpu" && systempool.spec.clusterRef.name == boundary.status.clusterName && cpupool.spec.clusterRef.name == boundary.status.clusterName && auth.status.ready && endpoint.status.ready && hubdb.status.ready && homes.status.ready && hubdb.spec.purpose == "database" && homes.spec.purpose == "homes" && hubdb.spec.mode == "dynamicPolicy" && homes.spec.mode == "dynamicPolicy" && application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}', health: '${application.?status.?health.?status.orValue("Progressing")}', syncRevision: '${application.?status.?sync.?revision.orValue("")}' }
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: systempool
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNodePool, metadata: {name: '${schema.spec.systemPoolRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: cpupool
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNodePool, metadata: {name: '${schema.spec.cpuPoolRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: auth
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: HubAuthBinding, metadata: {name: '${schema.spec.authRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: endpoint
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: EndpointBinding, metadata: {name: '${schema.spec.endpointRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: hubdb
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: CinderStorageBinding, metadata: {name: '${schema.spec.hubDatabaseRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: homes
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: CinderStorageBinding, metadata: {name: '${schema.spec.homeStorageRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd, labels: {csoc.js2.org/workload-cluster: '${boundary.status.clusterName}', csoc.js2.org/ownership: spoke-application}}
+        spec:
+          project: ${boundary.status.projectName}
+          source:
+            repoURL: ${schema.spec.configRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: .
+            plugin:
+              name: csoc-sops-helm
+              env:
+                - {name: MODE, value: helm}
+                - {name: CONFIG_PATH, value: '${schema.spec.configPath}'}
+                - {name: HELM_CHART, value: jupyterhub/jupyterhub}
+                - {name: HELM_VERSION, value: '${schema.spec.chartVersion}'}
+                - {name: JUPYTERHUB_AUTH_MODE, value: '${auth.spec.mode}'}
+                - {name: ENDPOINT_PLACEMENT, value: '${endpoint.spec.placement}'}
+                - {name: ENDPOINT_ALLOWED_CIDR, value: '${endpoint.spec.allowedCIDR}'}
+                - {name: ENDPOINT_HOSTNAME, value: '${endpoint.spec.hostname}'}
+                - {name: TLS_MODE, value: '${endpoint.spec.tlsMode}'}
+                - {name: TLS_SECRET_NAME, value: '${endpoint.spec.tlsSecretName}'}
+                - {name: HUB_DB_STORAGE_CLASS, value: '${hubdb.spec.storageClassName}'}
+                - {name: HUB_DB_SIZE_GIB, value: '${string(hubdb.spec.sizeGiB)}'}
+                - {name: HOME_STORAGE_CLASS, value: '${homes.spec.storageClassName}'}
+                - {name: HOME_SIZE_GIB, value: '${string(homes.spec.sizeGiB)}'}
+          destination: {name: '${boundary.status.clusterName}', namespace: '${boundary.spec.destinationNamespace}'}
+          syncPolicy: {automated: {prune: true, selfHeal: true}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}
+          revisionHistoryLimit: 3
