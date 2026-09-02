@@ -1,0 +1,84 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokeaccount.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-12"
+    kro.run/description: Second-generation account boundary with deterministic credential discovery
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: SpokeAccount
+    scope: Namespaced
+    spec:
+      projectID: string | required=true pattern="^[0-9a-f]{32}$"
+      credentialSecretName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      externalNetworkID: string | required=true pattern="^[0-9a-f-]{36}$"
+      capacityBudget:
+        maxCores: integer | required=true minimum=1
+        maxRAMMiB: integer | required=true minimum=1024
+        maxInstances: integer | required=true minimum=1
+        maxVolumes: integer | required=true minimum=1
+        maxVolumeGiB: integer | required=true minimum=20
+      controlObjectBudget:
+        maxMachineProfiles: integer | default=8 minimum=1 maximum=32
+        maxWorkloadClusters: integer | default=4 minimum=1 maximum=8
+        maxNodePools: integer | default=16 minimum=1 maximum=32
+    status:
+      ready: '${accountnamespace.?status.?phase.orValue("") == "Active" && accountnamespace.metadata.?labels["csoc.js2.org/account"].orValue("") == schema.metadata.name && identity.metadata.name != ""}'
+      namespace: ${accountnamespace.metadata.name}
+      identityName: ${identity.metadata.name}
+      projectID: ${schema.spec.projectID}
+      externalNetworkID: ${schema.spec.externalNetworkID}
+  resources:
+    - id: accountnamespace
+      externalRef:
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${schema.metadata.namespace}
+    - id: identity
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: OpenStackClusterIdentity
+        metadata:
+          name: ${schema.metadata.name}
+        spec:
+          secretRef:
+            name: ${schema.spec.credentialSecretName}
+            namespace: ${schema.metadata.namespace}
+          namespaceSelector:
+            matchLabels:
+              csoc.js2.org/account: ${schema.metadata.name}
+    - id: accountpolicy
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-account-policy"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/immutable-contract: "true"
+        immutable: true
+        data:
+          projectID: ${schema.spec.projectID}
+          externalNetworkID: ${schema.spec.externalNetworkID}
+          credentialSecretName: ${schema.spec.credentialSecretName}
+          maxCores: ${string(schema.spec.capacityBudget.maxCores)}
+          maxRAMMiB: ${string(schema.spec.capacityBudget.maxRAMMiB)}
+          maxInstances: ${string(schema.spec.capacityBudget.maxInstances)}
+          maxVolumes: ${string(schema.spec.capacityBudget.maxVolumes)}
+          maxVolumeGiB: ${string(schema.spec.capacityBudget.maxVolumeGiB)}
+    - id: quota
+      template:
+        apiVersion: v1
+        kind: ResourceQuota
+        metadata:
+          name: csoc-account-object-budget
+          namespace: ${schema.metadata.namespace}
+        spec:
+          hard:
+            count/machineprofiles.infra.csoc.js2.org: ${string(schema.spec.controlObjectBudget.maxMachineProfiles)}
+            count/workloadclusters.infra.csoc.js2.org: ${string(schema.spec.controlObjectBudget.maxWorkloadClusters)}
+            count/spokenodepools.infra.csoc.js2.org: ${string(schema.spec.controlObjectBudget.maxNodePools)}

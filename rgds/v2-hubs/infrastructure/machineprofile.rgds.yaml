@@ -1,0 +1,94 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: machineprofile.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-11"
+    kro.run/description: Immutable exact-ID compute profile; replace the instance for hardware or image changes
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: MachineProfile
+    scope: Namespaced
+    spec:
+      accountRef:
+        name: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      class: string | required=true enum="system,cpu,gpu,mig,build"
+      flavorID: string | required=true pattern="^[0-9]+$"
+      vCPUs: integer | required=true minimum=1 maximum=256
+      ramMiB: integer | required=true minimum=1024
+      imageID: string | required=true pattern="^[0-9a-f-]{36}$"
+      volumeTypeID: string | required=true pattern="^[0-9a-f-]{36}$"
+      rootSizeGiB: integer | default=20 minimum=20 maximum=20
+      failureDomain: string | required=true pattern="^[A-Za-z0-9._-]+$"
+      accelerator:
+        vendor: string | default="none" enum="none,nvidia"
+        resourceName: string | default="none" pattern="^(none|[a-z0-9.-]+/[a-z0-9.-]+)$"
+        count: integer | default=0 minimum=0
+        migCapable: boolean | default=false
+    status:
+      ready: '${image.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") && volumetype.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      class: ${schema.spec.class}
+      flavorID: ${schema.spec.flavorID}
+      vCPUs: ${schema.spec.vCPUs}
+      ramMiB: ${schema.spec.ramMiB}
+      imageID: ${schema.spec.imageID}
+      volumeTypeID: ${schema.spec.volumeTypeID}
+      rootSizeGiB: ${schema.spec.rootSizeGiB}
+      failureDomain: ${schema.spec.failureDomain}
+  resources:
+    - id: account
+      externalRef:
+        apiVersion: infra.csoc.js2.org/v1alpha1
+        kind: SpokeAccount
+        metadata:
+          name: ${schema.spec.accountRef.name}
+          namespace: ${schema.metadata.namespace}
+    - id: image
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Image
+        metadata:
+          name: '${schema.metadata.name + "-image"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: ${account.spec.credentialSecretName}
+          managementPolicy: unmanaged
+          import:
+            id: ${schema.spec.imageID}
+    - id: volumetype
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: VolumeType
+        metadata:
+          name: '${schema.metadata.name + "-volume-type"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef:
+            cloudName: openstack
+            secretName: ${account.spec.credentialSecretName}
+          managementPolicy: unmanaged
+          import:
+            id: ${schema.spec.volumeTypeID}
+    - id: contract
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-machine-profile"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/immutable-contract: "true"
+        immutable: true
+        data:
+          class: ${schema.spec.class}
+          flavorID: ${schema.spec.flavorID}
+          vCPUs: ${string(schema.spec.vCPUs)}
+          ramMiB: ${string(schema.spec.ramMiB)}
+          imageID: ${schema.spec.imageID}
+          volumeTypeID: ${schema.spec.volumeTypeID}
+          rootSizeGiB: ${string(schema.spec.rootSizeGiB)}
+          failureDomain: ${schema.spec.failureDomain}

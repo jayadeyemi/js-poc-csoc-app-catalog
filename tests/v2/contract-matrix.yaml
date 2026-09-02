@@ -1,0 +1,35 @@
+apiVersion: tests.csoc.js2.org/v1alpha1
+kind: ContractMatrix
+supported:
+  machineClasses: [system, cpu, gpu, mig, build]
+  networkModes: [managedRouted, importedRouted]
+  storageBackends: [cinder-fixed, cinder-dynamic]
+  endpointModes: [clusterIP]
+  tlsModes: [none]
+  authModes: [dummy]
+  serviceTypes: [SmokeApplication, JupyterHubInstance, MonitoringInstance]
+  legacyKinds: [SpokeCluster, SpokeIdentity, SpokeEnvironmentConfig, SpokeNetworkImportConfig, SpokeSharedNetworkConfig, SpokeGitOps, SpokeHelloApp]
+renderOnly:
+  endpointModes: [internalLoadBalancer, restrictedPublicLoadBalancer]
+  tlsModes: [applicationAutoHTTPS, existingSecret]
+  authModes: [github, cilogonAccess, cilogonAccess-openstack-membership]
+  serviceTypes: [RegistryCacheInstance]
+failClosed:
+  storageBackends: [cephfs, s3]
+  addons: [GpuRuntimeAddon, CephFSAddon, S3CSIAddon]
+  services: [BinderBuildInstance, JupyterOutpostInstance]
+rejections:
+  - {case: system-min-zero, rule: system-minimum-one}
+  - {case: min-greater-than-max, rule: ordered-bounds}
+  - {case: pool-profile-update, rule: replacement-required}
+  - {case: imported-resource-without-id, rule: exact-id-required}
+  - {case: cross-namespace-reference, rule: local-reference-only}
+  - {case: duplicate-tuple-owner, rule: one-owner}
+  - {case: cross-owner-cluster-reference, rule: application-and-cluster-owner-match}
+  - {case: public-zero-cidr, rule: public-exact-ipv4-32}
+  - {case: public-multiple-cidrs, rule: public-exact-ipv4-32}
+  - {case: dummy-public-auth, rule: dummy-development-non-public-only}
+  - {case: unpinned-source-branch, rule: exact-commit-required}
+  - {case: floating-image-tag, rule: image-digest-required}
+  - {case: binder-without-approval, rule: privileged-approval-required}
+  - {case: optional-addon-default-version, rule: explicit-validated-version-required}

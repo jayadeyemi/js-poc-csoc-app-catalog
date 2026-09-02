@@ -8,9 +8,16 @@
 - KRO ResourceGraphDefinition API identity is treated as immutable. A breaking
   schema or ownership change gets a new Kind/RGD, dual-run fixtures, a migration
   procedure, a rollback window, and a separately reviewed retirement.
-- Workload graphs deploy into the spoke through reconciled CAPI addon resources
-  or spoke-local GitOps. They must not put application workloads on a CSOC.
+- V2 spoke Kubernetes resources are delivered only by central Argo to the
+  registered spoke. Do not add `ClusterResourceSet`, `HelmChartProxy`, or a
+  second spoke-local GitOps owner to a v2 graph.
 - Pin charts/images/revisions and expose readiness from real downstream status.
+- A v2 `SpokeNodePool` must omit `MachineDeployment.spec.replicas`; its
+  min/max annotations initialize CAPI and the spoke-local Cluster Autoscaler
+  owns replica changes thereafter.
+- Keep every v2 RGD in its own single-document manifest under
+  `rgds/v2-hubs/infrastructure/`, `rgds/v2-hubs/bindings/`, or `rgds/v2-hubs/services/` and
+  register each file explicitly through the nested v2 Kustomizations.
 
 This repository is definitions-only. It publishes reusable KRO
 `ResourceGraphDefinition` objects; all graph instances live in
@@ -22,7 +29,11 @@ GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
 ```
 rgds/
-  test-poc/            tested reusable OpenStack profile library
+  v2-hubs/                  current one-file-per-RGD APIs
+    infrastructure/   account, network, cluster, node-pool, and foundation APIs
+    bindings/         application, data, addon, endpoint, and auth contracts
+    services/         typed workload delivery APIs
+  v1-samples/            tested reusable OpenStack profile library
     configmaps/        write-once provider and spoke configuration blocks
     cluster/v1/        SpokeIdentity and SpokeCluster graphs
     compute/           ORC-managed keypairs and optional Nova placement graphs

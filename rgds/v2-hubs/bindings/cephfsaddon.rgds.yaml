@@ -1,0 +1,41 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: cephfsaddon.delivery.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-7"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: delivery.csoc.js2.org
+    kind: CephFSAddon
+    scope: Namespaced
+    spec:
+      registrationRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      configRepository: string | required=true pattern="^https://github\\.com/.+$"
+      configCommit: string | required=true pattern="^[0-9a-f]{40}$"
+      configPath: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      driverVersion: string | required=true pattern="^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    status: {ready: '${application.?status.?health.?status.orValue("") == "Healthy"}', health: '${application.?status.?health.?status.orValue("Progressing")}', syncRevision: '${application.?status.?sync.?revision.orValue("")}' }
+  resources:
+    - id: registration
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeRegistration, metadata: {name: '${schema.spec.registrationRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: project
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: AppProject
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd}
+        spec: {sourceRepos: ['${schema.spec.configRepository}'], destinations: [{name: '${registration.spec.clusterRef.name + "-platform"}', namespace: ceph-csi-cephfs}], clusterResourceWhitelist: [{group: "*", kind: "*"}], namespaceResourceWhitelist: [{group: "*", kind: "*"}], orphanedResources: {warn: true}}
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd}
+        spec:
+          project: ${project.metadata.name}
+          source:
+            repoURL: ${schema.spec.configRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: .
+            plugin:
+              name: csoc-sops-helm
+              env: [{name: MODE, value: addon}, {name: CONFIG_PATH, value: '${schema.spec.configPath}'}, {name: RELEASE_VERSION, value: '${schema.spec.driverVersion}'}]
+          destination: {name: '${registration.spec.clusterRef.name + "-platform"}', namespace: ceph-csi-cephfs}
+          syncPolicy: {automated: {prune: true, selfHeal: true}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}

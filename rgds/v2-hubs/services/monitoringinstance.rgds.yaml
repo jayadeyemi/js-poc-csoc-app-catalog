@@ -1,0 +1,44 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: monitoringinstance.services.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-5"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: services.csoc.js2.org
+    kind: MonitoringInstance
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      systemPoolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      prometheusStorageRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      grafanaEnabled: boolean | default=false
+      alertmanagerEnabled: boolean | default=false
+      secretBundleRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      endpointRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      configRepository: string | required=true pattern="^https://github\\.com/.+$"
+      configCommit: string | required=true pattern="^[0-9a-f]{40}$"
+      configPath: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      chartVersion: string | required=true pattern="^84\\.3\\.0$"
+    status: {ready: '${boundary.spec.serviceType == "monitoring" && systempool.spec.class == "system" && systempool.spec.clusterRef.name == boundary.status.clusterName && storage.status.ready && storage.spec.purpose == "metrics" && storage.spec.mode == "dynamicPolicy" && application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}', health: '${application.?status.?health.?status.orValue("Progressing")}', syncRevision: '${application.?status.?sync.?revision.orValue("")}' }
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: systempool
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNodePool, metadata: {name: '${schema.spec.systemPoolRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: storage
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: CinderStorageBinding, metadata: {name: '${schema.spec.prometheusStorageRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd, labels: {csoc.js2.org/workload-cluster: '${boundary.status.clusterName}', csoc.js2.org/ownership: spoke-monitoring}}
+        spec:
+          project: ${boundary.status.projectName}
+          source:
+            repoURL: ${schema.spec.configRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: .
+            plugin: {name: csoc-sops-helm, env: [{name: MODE, value: helm}, {name: CONFIG_PATH, value: '${schema.spec.configPath}'}, {name: HELM_CHART, value: prometheus-community/kube-prometheus-stack}, {name: HELM_VERSION, value: '${schema.spec.chartVersion}'}, {name: MONITORING_GRAFANA_ENABLED, value: '${string(schema.spec.grafanaEnabled)}'}, {name: MONITORING_ALERTMANAGER_ENABLED, value: '${string(schema.spec.alertmanagerEnabled)}'}, {name: PROMETHEUS_STORAGE_CLASS, value: '${storage.spec.storageClassName}'}, {name: PROMETHEUS_STORAGE_SIZE_GIB, value: '${string(storage.spec.sizeGiB)}'}]}
+          destination: {name: '${boundary.status.monitoringClusterName}', namespace: '${boundary.spec.destinationNamespace}'}
+          syncPolicy: {automated: {prune: true, selfHeal: true}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}
+          revisionHistoryLimit: 3

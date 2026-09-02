@@ -2,12 +2,29 @@
 
 KRO `ResourceGraphDefinition` library. `kustomization.yaml` is the single
 entrypoint for the Argo `rgds` Application. The tested Jetstream2 profile is
-grouped below `test-poc/`; its generated kinds remain reusable across any
+grouped below `v1-samples/`; its generated kinds remain reusable across any
 number of `SpokeIdentity` account instances.
+
+## Second-generation APIs
+
+`v2-hubs/` is the current architecture. It deliberately uses the new
+`infra.csoc.js2.org`, `delivery.csoc.js2.org`, and `services.csoc.js2.org`
+groups and does not extend `SpokeCluster` or any other first-generation Kind.
+Clusters, independent node pools, bindings, and application tuples therefore
+have separate lifecycles. See [`v2-hubs/README.md`](v2-hubs/README.md) for the contract
+and retirement rules.
+
+Each v2 RGD is a single YAML document in one of three ownership directories:
+`v2-hubs/infrastructure/`, `v2-hubs/bindings/`, or `v2-hubs/services/`. The root
+`kustomization.yaml` lists every definition explicitly; adding an RGD requires
+adding its individual manifest there as part of the same change.
+
+Everything below `v1-samples/` is compatibility-only and remains installed for
+dual-run migration and rollback.
 
 ## Subdirectories
 
-### test-poc/configmaps/
+### v1-samples/configmaps/
 
 Write-once configuration blocks that produce immutable ConfigMaps consumed by downstream graphs.
 
@@ -32,7 +49,7 @@ ordinary mutable fleet fields are `SpokeCluster.spec.kubernetes.minNodes` and
 `maxNodes`; workload replica and repository connection fields are explicit in
 their workload graph instances.
 
-### test-poc/cluster/v1/
+### v1-samples/cluster/v1/
 
 | File | Kind | Purpose |
 |------|------|---------|
@@ -40,7 +57,7 @@ their workload graph instances.
 
 `SpokeIdentity` creates the account namespace and a namespace-restricted `OpenStackClusterIdentity`. `SpokeCluster` exposes only mutable `minNodes`/`maxNodes`; all other inputs are read from the immutable ConfigMaps produced above.
 
-### test-poc/network/
+### v1-samples/network/
 
 | File | Kind | ORC management |
 |------|------|---------------|
@@ -61,7 +78,7 @@ Nova server-group, Neutron security-group, and Cinder volume graphs live under
 `compute/`, `security/`, and `storage/`, but are not composed into
 `SpokeCluster`; CAPO/CCM/CSI retain cluster infrastructure ownership.
 
-### test-poc/workloads/
+### v1-samples/workloads/
 
 | File | Kind | Delivery mechanism |
 |------|------|-------------------|

@@ -1,0 +1,27 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: endpointbinding.delivery.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-6"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: delivery.csoc.js2.org
+    kind: EndpointBinding
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      placement: string | required=true enum="clusterIP,internalLoadBalancer,restrictedPublicLoadBalancer"
+      allowedCIDR: string | default="" pattern="^$|^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$"
+      hostname: string | default="" pattern="^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      tlsMode: string | required=true enum="none,applicationAutoHTTPS,existingSecret"
+      tlsSecretName: string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    status: {ready: '${contract.metadata.name != ""}', placement: '${schema.spec.placement}', hostname: '${schema.spec.hostname}'}
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: contract
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}', labels: {csoc.js2.org/endpoint-contract: '${schema.spec.placement}'}}
+        immutable: true
+        data: {placement: '${schema.spec.placement}', allowedCIDR: '${schema.spec.allowedCIDR}', hostname: '${schema.spec.hostname}', tlsMode: '${schema.spec.tlsMode}', tlsSecretName: '${schema.spec.tlsSecretName}', separateApplicationLoadBalancer: "true", apiLoadBalancerReuse: "forbidden"}
