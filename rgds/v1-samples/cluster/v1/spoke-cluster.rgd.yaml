@@ -26,7 +26,7 @@ spec:
         minNodes: integer | default=2 minimum=1 maximum=4
         maxNodes: integer | default=4 minimum=1 maximum=4
     status:
-      ready: '${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
+      ready: '${cluster.?status.?conditions.orValue([]).exists(c, (c.type == "Available" || c.type == "Ready") && c.status == "True") && cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}'
       cloudConfigReady: '${cloudconfigresourceset.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True")}'
       addonsReady: '${calico.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && calicoinstallation.?status.?conditions.orValue([]).exists(c, c.type == "ResourcesApplied" && c.status == "True") && openstackccm.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True") && cindercsi.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
       autoscalerReady: ${autoscalerdeployment.?status.?availableReplicas.orValue(0) >= 1}
@@ -234,9 +234,9 @@ spec:
 
     - id: cluster
       readyWhen:
-        - ${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+        - ${cluster.?status.?conditions.orValue([]).exists(c, (c.type == "Available" || c.type == "Ready") && c.status == "True")}
       template:
-        apiVersion: cluster.x-k8s.io/v1beta1
+        apiVersion: cluster.x-k8s.io/v1beta2
         kind: Cluster
         metadata:
           name: ${schema.metadata.name}
@@ -254,15 +254,13 @@ spec:
               cidrBlocks:
                 - ${clusterconfig.data.serviceCIDR}
           infrastructureRef:
-            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            apiGroup: infrastructure.cluster.x-k8s.io
             kind: OpenStackCluster
             name: ${openstackcluster.metadata.name}
-            namespace: ${schema.metadata.namespace}
           controlPlaneRef:
-            apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+            apiGroup: controlplane.cluster.x-k8s.io
             kind: KubeadmControlPlane
             name: ${kubeadmcontrolplane.metadata.name}
-            namespace: ${schema.metadata.namespace}
 
     - id: workermachinetemplate
       template:
