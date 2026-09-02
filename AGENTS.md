@@ -16,7 +16,7 @@
   min/max annotations initialize CAPI and the spoke-local Cluster Autoscaler
   owns replica changes thereafter.
 - Keep every v2 RGD in its own single-document manifest under
-  `rgds/v2/infrastructure/`, `rgds/v2/bindings/`, or `rgds/v2/services/` and
+  `rgds/v2-hubs/infrastructure/`, `rgds/v2-hubs/bindings/`, or `rgds/v2-hubs/services/` and
   register each file explicitly through the nested v2 Kustomizations.
 
 This repository is definitions-only. It publishes reusable KRO
@@ -29,11 +29,11 @@ GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
 ```
 rgds/
-  v2/                  current one-file-per-RGD APIs
+  v2-hubs/                  current one-file-per-RGD APIs
     infrastructure/   account, network, cluster, node-pool, and foundation APIs
     bindings/         application, data, addon, endpoint, and auth contracts
     services/         typed workload delivery APIs
-  test-poc/            tested reusable OpenStack profile library
+  v1-samples/            tested reusable OpenStack profile library
     configmaps/        write-once provider and spoke configuration blocks
     cluster/v1/        SpokeIdentity and SpokeCluster graphs
     compute/           ORC-managed keypairs and optional Nova placement graphs

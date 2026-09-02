@@ -17,7 +17,7 @@ spec:
       systemPoolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
       configRepository: string | required=true pattern="^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\\.git)?$"
       configCommit: string | required=true pattern="^[0-9a-f]{40}$"
-      configPath: string | default="projects/csoc-v2/foundation" pattern="^[A-Za-z0-9._/-]+$"
+      configPath: string | default="projects/csoc-v2-hubs/foundation" pattern="^[A-Za-z0-9._/-]+$"
       calicoVersion: string | required=true pattern="^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
       ccmChartVersion: string | required=true pattern="^[0-9]+\\.[0-9]+\\.[0-9]+$"
       cinderCSIChartVersion: string | required=true pattern="^[0-9]+\\.[0-9]+\\.[0-9]+$"

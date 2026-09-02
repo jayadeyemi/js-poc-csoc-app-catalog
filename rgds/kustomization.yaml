@@ -3,24 +3,24 @@ kind: Kustomization
 resources:
   # Second-generation APIs. Each RGD is a separate manifest so API ownership
   # and review history remain independent during migration.
-  - v2
-  - test-poc/cluster/v1/spoke-cluster.rgd.yaml
-  - test-poc/cluster/v1/spoke-identity.rgd.yaml
-  - test-poc/configmaps/immutable-spoke-config.rgd.yaml
-  - test-poc/configmaps/spoke-environment-config.rgd.yaml
-  - test-poc/configmaps/spoke-network-import-config.rgd.yaml
-  - test-poc/configmaps/spoke-shared-network-config.rgd.yaml
-  - test-poc/compute/spoke-keypair.rgd.yaml
-  - test-poc/compute/spoke-server-group.rgd.yaml
-  - test-poc/network/auto-allocated-spoke-network.rgd.yaml
-  - test-poc/network/dedicated-spoke-network.rgd.yaml
-  - test-poc/network/imported-spoke-network.rgd.yaml
-  - test-poc/network/isolated-openstack-network.rgd.yaml
-  - test-poc/network/routed-spoke-network.rgd.yaml
-  - test-poc/network/fully-managed-spoke-network.rgd.yaml
-  - test-poc/network/shared-provider-network.rgd.yaml
-  - test-poc/security/spoke-security-group.rgd.yaml
-  - test-poc/storage/spoke-volume.rgd.yaml
-  - test-poc/workloads/hello-app.rgd.yaml
-  - test-poc/workloads/spoke-hello-app.rgd.yaml
-  - test-poc/workloads/spoke-gitops.rgd.yaml
+  - v2-hubs
+  - v1-samples/cluster/v1/spoke-cluster.rgd.yaml
+  - v1-samples/cluster/v1/spoke-identity.rgd.yaml
+  - v1-samples/configmaps/immutable-spoke-config.rgd.yaml
+  - v1-samples/configmaps/spoke-environment-config.rgd.yaml
+  - v1-samples/configmaps/spoke-network-import-config.rgd.yaml
+  - v1-samples/configmaps/spoke-shared-network-config.rgd.yaml
+  - v1-samples/compute/spoke-keypair.rgd.yaml
+  - v1-samples/compute/spoke-server-group.rgd.yaml
+  - v1-samples/network/auto-allocated-spoke-network.rgd.yaml
+  - v1-samples/network/dedicated-spoke-network.rgd.yaml
+  - v1-samples/network/imported-spoke-network.rgd.yaml
+  - v1-samples/network/isolated-openstack-network.rgd.yaml
+  - v1-samples/network/routed-spoke-network.rgd.yaml
+  - v1-samples/network/fully-managed-spoke-network.rgd.yaml
+  - v1-samples/network/shared-provider-network.rgd.yaml
+  - v1-samples/security/spoke-security-group.rgd.yaml
+  - v1-samples/storage/spoke-volume.rgd.yaml
+  - v1-samples/workloads/hello-app.rgd.yaml
+  - v1-samples/workloads/spoke-hello-app.rgd.yaml
+  - v1-samples/workloads/spoke-gitops.rgd.yaml
