@@ -1,0 +1,96 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: workloadcluster.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+    kro.run/description: Reusable CAPI/CAPO spoke with no embedded worker pools or applications
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: WorkloadCluster
+    scope: Namespaced
+    spec:
+      accountRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      networkRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      controlPlaneProfileRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      kubernetesVersion: string | required=true pattern="^v1\\.34\\.[0-9]+$"
+      controlPlaneCount: integer | required=true minimum=1 maximum=5
+      podCIDR: string | required=true pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+      serviceCIDR: string | required=true pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+      apiServerAllowedCIDR: string | required=true pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$"
+    status:
+      ready: '${profile.spec.class == "system" && cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}'
+      phase: '${cluster.?status.?phase.orValue("Pending")}'
+      endpoint: '${cluster.?spec.?controlPlaneEndpoint.?host.orValue("") + ":" + string(cluster.?spec.?controlPlaneEndpoint.?port.orValue(6443))}'
+      accountName: ${account.metadata.name}
+      networkName: ${network.metadata.name}
+      controlPlaneProfileName: ${profile.metadata.name}
+  resources:
+    - id: account
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeAccount, metadata: {name: '${schema.spec.accountRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: network
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNetwork, metadata: {name: '${schema.spec.networkRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: profile
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: MachineProfile, metadata: {name: '${schema.spec.controlPlaneProfileRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: openstackcluster
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackCluster
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          identityRef: {cloudName: openstack, name: '${account.metadata.name}', type: ClusterIdentity}
+          apiServerLoadBalancer:
+            enabled: true
+            allowedCIDRs: ['${schema.spec.apiServerAllowedCIDR}']
+          network: {id: '${network.status.networkID}'}
+          subnets: [{id: '${network.status.subnetID}'}]
+          externalNetwork: {id: '${account.spec.externalNetworkID}'}
+          managedSecurityGroups:
+            allowAllInClusterTraffic: false
+    - id: controlplanemachinetemplate
+      template:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: OpenStackMachineTemplate
+        metadata: {name: '${schema.metadata.name + "-control-plane"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          template:
+            spec:
+              flavorID: ${profile.spec.flavorID}
+              image: {id: '${profile.spec.imageID}'}
+              rootVolume: {sizeGiB: '${profile.spec.rootSizeGiB}', type: '${profile.spec.volumeTypeID}'}
+    - id: kubeadmcontrolplane
+      template:
+        apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+        kind: KubeadmControlPlane
+        metadata: {name: '${schema.metadata.name + "-control-plane"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          replicas: ${schema.spec.controlPlaneCount}
+          version: ${schema.spec.kubernetesVersion}
+          machineTemplate:
+            infrastructureRef: {apiVersion: infrastructure.cluster.x-k8s.io/v1beta1, kind: OpenStackMachineTemplate, name: '${controlplanemachinetemplate.metadata.name}', namespace: '${schema.metadata.namespace}'}
+          kubeadmConfigSpec:
+            initConfiguration: {nodeRegistration: {kubeletExtraArgs: {cloud-provider: external}}}
+            joinConfiguration: {nodeRegistration: {kubeletExtraArgs: {cloud-provider: external}}}
+            clusterConfiguration:
+              apiServer: {extraArgs: {tls-min-version: VersionTLS12}}
+              controllerManager: {extraArgs: {cloud-provider: external}}
+    - id: cluster
+      readyWhen:
+        - ${cluster.?status.?conditions.orValue([]).exists(c, c.type == "Ready" && c.status == "True")}
+      template:
+        apiVersion: cluster.x-k8s.io/v1beta1
+        kind: Cluster
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+          labels:
+            csoc.js2.org/workload-cluster: ${schema.metadata.name}
+            csoc.js2.org/generation: v2
+        spec:
+          clusterNetwork:
+            pods: {cidrBlocks: ['${schema.spec.podCIDR}']}
+            services: {cidrBlocks: ['${schema.spec.serviceCIDR}']}
+          infrastructureRef: {apiVersion: infrastructure.cluster.x-k8s.io/v1beta1, kind: OpenStackCluster, name: '${openstackcluster.metadata.name}', namespace: '${schema.metadata.namespace}'}
+          controlPlaneRef: {apiVersion: controlplane.cluster.x-k8s.io/v1beta1, kind: KubeadmControlPlane, name: '${kubeadmcontrolplane.metadata.name}', namespace: '${schema.metadata.namespace}'}

@@ -7,7 +7,8 @@ Definitions-only library of reusable KRO `ResourceGraphDefinition` objects. All 
 ```
 rgds/
   kustomization.yaml        single Argo source entrypoint
-  test-poc/                 tested OpenStack profile library
+  v2-hubs/                  current one-file-per-RGD hub API generation
+  v1-samples/                 tested OpenStack profile library
     configmaps/             write-once provider and spoke configuration blocks
     cluster/v1/             SpokeIdentity and SpokeCluster graphs
     compute/                Nova placement graphs
@@ -21,13 +22,16 @@ rgds/
 
 | RGD | Kind | Purpose |
 |-----|------|---------|
-| `test-poc/configmaps/` | four config APIs | Account/service, spoke environment, exact topology, and shared-network write-once blocks |
-| `test-poc/cluster/v1/` | `SpokeIdentity`, `SpokeCluster` | Account namespace, `OpenStackClusterIdentity`, and CAPI/CAPO spoke cluster |
-| `test-poc/network/` | seven network kinds | Auto/shared/exact imports, isolated L2, shared-router subnet, or dedicated routed topologies |
-| `test-poc/compute/` | `SpokeServerGroup` | Nova placement group using the immutable approved policy |
-| `test-poc/security/` | `SpokeSecurityGroup` | Mutable, bounded Neutron workload ingress policy |
-| `test-poc/storage/` | `SpokeVolume` | Managed Cinder volume using immutable type/AZ restrictions |
-| `test-poc/workloads/` | `HelloApp`, `SpokeHelloApp`, `SpokeGitOps` | Direct CSOC workload, central CAPI delivery, or spoke-local Argo repository root |
+| `v2-hubs/infrastructure/` | seven infrastructure APIs | Accounts, immutable machine/network contracts, clusters, node pools, foundation, and registration |
+| `v2-hubs/bindings/` | ten delivery APIs | Application, storage, endpoint, secret, GPU, and authentication bindings |
+| `v2-hubs/services/` | six service APIs | Smoke, JupyterHub, monitoring, registry cache, Binder, and Jupyter Outpost delivery |
+| `v1-samples/configmaps/` | four config APIs | Account/service, spoke environment, exact topology, and shared-network write-once blocks |
+| `v1-samples/cluster/v1/` | `SpokeIdentity`, `SpokeCluster` | Account namespace, `OpenStackClusterIdentity`, and CAPI/CAPO spoke cluster |
+| `v1-samples/network/` | seven network kinds | Auto/shared/exact imports, isolated L2, shared-router subnet, or dedicated routed topologies |
+| `v1-samples/compute/` | `SpokeServerGroup` | Nova placement group using the immutable approved policy |
+| `v1-samples/security/` | `SpokeSecurityGroup` | Mutable, bounded Neutron workload ingress policy |
+| `v1-samples/storage/` | `SpokeVolume` | Managed Cinder volume using immutable type/AZ restrictions |
+| `v1-samples/workloads/` | `HelloApp`, `SpokeHelloApp`, `SpokeArgoCD`, `SpokeArgoApplication`, `SpokeGitOps` | Direct CSOC workload, central CAPI delivery, or modular/legacy spoke-local Argo ownership |
 
 ## Boundaries
 
@@ -41,6 +45,10 @@ rgds/
 - An immutable ConfigMap is a handoff block, not a mutable settings store. Replace
   its graph instance only after every consumer has been retired.
 - Every `kubectl kustomize rgds` render and `make validate` must pass before merging.
+- Publish both RGD generations in dependency sync waves and require every RGD
+  plus its latest GraphRevision to be Active/Ready under KRO 0.9.3 aggregation
+  RBAC. The four v1 configuration APIs use separate early waves because KRO's
+  default single dynamic-controller worker cannot reliably start them together.
 
 Every RGD has a paired `.rgd.md` file beside it describing inputs, owned
 resources, external references, consumers, and deletion behavior.
