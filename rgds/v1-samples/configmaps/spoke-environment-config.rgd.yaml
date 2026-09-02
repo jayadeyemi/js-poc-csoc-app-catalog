@@ -3,7 +3,7 @@ kind: ResourceGraphDefinition
 metadata:
   name: spokeenvironmentconfig
   annotations:
-    argocd.argoproj.io/sync-wave: "-9"
+    argocd.argoproj.io/sync-wave: "-15"
     kro.run/description: Write-once network and Kubernetes configuration blocks for one spoke
 spec:
   schema:

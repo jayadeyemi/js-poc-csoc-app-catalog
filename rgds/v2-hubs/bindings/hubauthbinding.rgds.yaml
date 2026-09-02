@@ -1,0 +1,34 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: hubauthbinding.delivery.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-6"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: delivery.csoc.js2.org
+    kind: HubAuthBinding
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      mode: string | required=true enum="dummy,github,cilogonAccess"
+      environment: string | required=true enum="dev,staging,prod"
+      endpointRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      endpointPlacement: string | required=true enum="clusterIP,internalLoadBalancer,restrictedPublicLoadBalancer"
+      secretBundleRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      openStackMembershipAuthorization: boolean | default=false
+      openStackProjectID: string | default="" pattern="^$|^[0-9a-f]{32}$"
+    status: {ready: '${(schema.spec.mode == "dummy" || secrets.?status.?ready.orValue(false)) && endpoint.spec.placement == schema.spec.endpointPlacement && contract.metadata.name != ""}', mode: '${schema.spec.mode}'}
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: secrets
+      includeWhen: ['${schema.spec.secretBundleRef.name != ""}']
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: SecretBundle, metadata: {name: '${schema.spec.secretBundleRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: endpoint
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: EndpointBinding, metadata: {name: '${schema.spec.endpointRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: contract
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata: {name: '${schema.metadata.name}', namespace: '${schema.metadata.namespace}', labels: {csoc.js2.org/auth-contract: '${schema.spec.mode}'}}
+        immutable: true
+        data: {mode: '${schema.spec.mode}', environment: '${schema.spec.environment}', endpointPlacement: '${schema.spec.endpointPlacement}', openStackMembershipAuthorization: '${string(schema.spec.openStackMembershipAuthorization)}', openStackProjectID: '${schema.spec.openStackProjectID}'}

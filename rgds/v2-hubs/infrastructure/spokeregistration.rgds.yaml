@@ -1,0 +1,51 @@
+
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokeregistration.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-9"
+    kro.run/description: Registration request consumed by the CSOC registration controller
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: SpokeRegistration
+    scope: Namespaced
+    spec:
+      clusterRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      workloadCloudConfigSecretName: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      rotationRequest: string | default="" pattern="^$|^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    status:
+      registered: '${schema.metadata.?annotations["registration.csoc.js2.org/registered"].orValue("false") == "true"}'
+      endpoint: '${schema.metadata.?annotations["registration.csoc.js2.org/endpoint"].orValue("")}'
+      platformClusterName: '${schema.metadata.?annotations["registration.csoc.js2.org/platform-cluster-name"].orValue("")}'
+      monitoringClusterName: '${schema.metadata.?annotations["registration.csoc.js2.org/monitoring-cluster-name"].orValue("")}'
+      certificateNotAfter: '${schema.metadata.?annotations["registration.csoc.js2.org/certificate-not-after"].orValue("")}'
+      credentialRevision: '${schema.metadata.?annotations["registration.csoc.js2.org/credential-revision"].orValue("")}'
+      platformCertificateNotAfter: '${schema.metadata.?annotations["registration.csoc.js2.org/platform-certificate-not-after"].orValue("")}'
+      platformCredentialRevision: '${schema.metadata.?annotations["registration.csoc.js2.org/platform-credential-revision"].orValue("")}'
+      monitoringCertificateNotAfter: '${schema.metadata.?annotations["registration.csoc.js2.org/monitoring-certificate-not-after"].orValue("")}'
+      monitoringCredentialRevision: '${schema.metadata.?annotations["registration.csoc.js2.org/monitoring-credential-revision"].orValue("")}'
+      autoscalerCertificateNotAfter: '${schema.metadata.?annotations["registration.csoc.js2.org/autoscaler-certificate-not-after"].orValue("")}'
+      autoscalerCredentialRevision: '${schema.metadata.?annotations["registration.csoc.js2.org/autoscaler-credential-revision"].orValue("")}'
+      workloadCredentialRevision: '${schema.metadata.?annotations["registration.csoc.js2.org/workload-credential-revision"].orValue("")}'
+      rotationRequestApplied: '${schema.metadata.?annotations["registration.csoc.js2.org/rotation-request-applied"].orValue("")}'
+      message: '${schema.metadata.?annotations["registration.csoc.js2.org/message"].orValue("Waiting for registration controller")}'
+  resources:
+    - id: cluster
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: WorkloadCluster, metadata: {name: '${schema.spec.clusterRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: request
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${schema.metadata.name + "-registration-request"}'
+          namespace: ${schema.metadata.namespace}
+          labels:
+            registration.csoc.js2.org/request: "true"
+        data:
+          clusterName: ${cluster.metadata.name}
+          adminKubeconfigSecretName: '${cluster.metadata.name + "-kubeconfig"}'
+          workloadCloudConfigSecretName: ${schema.spec.workloadCloudConfigSecretName}
+          rotationRequest: ${schema.spec.rotationRequest}

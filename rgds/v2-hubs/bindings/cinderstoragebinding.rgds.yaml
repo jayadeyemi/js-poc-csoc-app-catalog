@@ -1,0 +1,96 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: cinderstoragebinding.delivery.csoc.js2.org
+  annotations: {argocd.argoproj.io/sync-wave: "-6"}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: delivery.csoc.js2.org
+    kind: CinderStorageBinding
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      purpose: string | required=true enum="database,homes,cache,metrics,scratch"
+      mode: string | required=true enum="fixed,dynamicPolicy"
+      storageClassName: string | default="cinder-retain" pattern="^cinder-retain$"
+      sizeGiB: integer | required=true minimum=1 maximum=16384
+      maxClaims: integer | default=1 minimum=1 maximum=1000
+      existingVolumeID: string | default="" pattern="^$|^[0-9a-f-]{36}$"
+      claimName: string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      configCommit: string | default="" pattern="^$|^[0-9a-f]{40}$"
+    status:
+      ready: '${schema.spec.mode == "dynamicPolicy" ? contract.metadata.name != "" : application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}'
+      claimName: ${schema.spec.claimName}
+      reclaimPolicy: '${schema.spec.storageClassName == "cinder-retain" ? "Retain" : "Retain"}'
+      health: '${schema.spec.mode == "dynamicPolicy" ? "Healthy" : application.?status.?health.?status.orValue("Progressing")}'
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: registration
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeRegistration, metadata: {name: '${boundary.spec.registrationRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: contract
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${schema.metadata.name}
+          namespace: ${schema.metadata.namespace}
+          annotations: {argocd.argoproj.io/sync-options: Prune=false}
+          labels: {csoc.js2.org/storage-contract: cinder}
+        immutable: true
+        data:
+          purpose: ${schema.spec.purpose}
+          mode: ${schema.spec.mode}
+          storageClassName: ${schema.spec.storageClassName}
+          sizeGiB: ${string(schema.spec.sizeGiB)}
+          maxClaims: ${string(schema.spec.maxClaims)}
+          existingVolumeID: ${schema.spec.existingVolumeID}
+          claimName: ${schema.spec.claimName}
+          destinationNamespace: ${boundary.spec.destinationNamespace}
+    - id: storageproject
+      includeWhen: ['${schema.spec.mode == "fixed"}']
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: AppProject
+        metadata:
+          name: '${schema.metadata.namespace + "-" + schema.metadata.name + "-storage"}'
+          namespace: argocd
+          labels: {csoc.js2.org/ownership: spoke-storage, csoc.js2.org/workload-cluster: '${boundary.status.clusterName}'}
+        spec:
+          description: Persistent storage delivery into one spoke application boundary
+          sourceRepos: ['${boundary.spec.sourceRepository}']
+          destinations: [{name: '${registration.spec.clusterRef.name + "-platform"}', namespace: '${boundary.spec.destinationNamespace}'}]
+          clusterResourceWhitelist: [{group: "", kind: PersistentVolume}]
+          namespaceResourceWhitelist: [{group: "", kind: PersistentVolumeClaim}]
+          orphanedResources: {warn: true}
+    - id: application
+      includeWhen: ['${schema.spec.mode == "fixed"}']
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: '${schema.metadata.namespace + "-" + schema.metadata.name + "-storage"}'
+          namespace: argocd
+          labels: {csoc.js2.org/workload-cluster: '${boundary.status.clusterName}', csoc.js2.org/ownership: spoke-storage}
+          annotations: {argocd.argoproj.io/sync-wave: "-1"}
+        spec:
+          project: ${storageproject.metadata.name}
+          source:
+            repoURL: ${boundary.spec.sourceRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: .
+            plugin:
+              name: csoc-sops-helm
+              env:
+                - {name: MODE, value: storage}
+                - {name: CONFIG_PATH, value: .}
+                - {name: STORAGE_MODE, value: '${schema.spec.mode}'}
+                - {name: STORAGE_CLASS, value: '${schema.spec.storageClassName}'}
+                - {name: STORAGE_SIZE_GIB, value: '${string(schema.spec.sizeGiB)}'}
+                - {name: STORAGE_VOLUME_ID, value: '${schema.spec.existingVolumeID}'}
+                - {name: STORAGE_CLAIM_NAME, value: '${schema.spec.claimName}'}
+                - {name: STORAGE_PV_NAME, value: '${schema.metadata.namespace + "-" + schema.spec.claimName}'}
+          destination: {name: '${registration.spec.clusterRef.name + "-platform"}', namespace: '${boundary.spec.destinationNamespace}'}
+          syncPolicy: {automated: {prune: false, selfHeal: true}, syncOptions: [ServerSideApply=true]}
+          revisionHistoryLimit: 3

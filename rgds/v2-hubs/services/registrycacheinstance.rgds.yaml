@@ -1,0 +1,58 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata: {name: registrycacheinstance.services.csoc.js2.org, annotations: {argocd.argoproj.io/sync-wave: "-5"}}
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: services.csoc.js2.org
+    kind: RegistryCacheInstance
+    scope: Namespaced
+    spec:
+      boundaryRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      poolRef: {name: 'string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      backendType: string | required=true enum="cinder,s3"
+      cinderStorageRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      s3StorageRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      secretBundleRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      endpointRef: {name: 'string | default="" pattern="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"'}
+      configRepository: string | required=true pattern="^https://github\\.com/.+$"
+      configCommit: string | required=true pattern="^[0-9a-f]{40}$"
+      configPath: string | required=true pattern="^[A-Za-z0-9._/-]+$"
+      chartVersion: string | required=true pattern="^0\\.1\\.0$"
+    status: {ready: '${boundary.spec.serviceType == "registry-cache" && (pool.spec.class == "system" || pool.spec.class == "cpu") && pool.spec.clusterRef.name == boundary.status.clusterName && application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}', health: '${application.?status.?health.?status.orValue("Progressing")}', syncRevision: '${application.?status.?sync.?revision.orValue("")}' }
+  resources:
+    - id: boundary
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: ApplicationBoundary, metadata: {name: '${schema.spec.boundaryRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: pool
+      externalRef: {apiVersion: infra.csoc.js2.org/v1alpha1, kind: SpokeNodePool, metadata: {name: '${schema.spec.poolRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: cinderstorage
+      includeWhen: ['${schema.spec.backendType == "cinder"}']
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: CinderStorageBinding, metadata: {name: '${schema.spec.cinderStorageRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: s3storage
+      includeWhen: ['${schema.spec.backendType == "s3"}']
+      externalRef: {apiVersion: delivery.csoc.js2.org/v1alpha1, kind: S3VolumeBinding, metadata: {name: '${schema.spec.s3StorageRef.name}', namespace: '${schema.metadata.namespace}'}}
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: {name: '${schema.metadata.namespace + "-" + schema.metadata.name}', namespace: argocd, labels: {csoc.js2.org/workload-cluster: '${boundary.status.clusterName}', csoc.js2.org/ownership: spoke-application}}
+        spec:
+          project: ${boundary.status.projectName}
+          source:
+            repoURL: ${schema.spec.configRepository}
+            targetRevision: ${schema.spec.configCommit}
+            path: .
+            plugin:
+              name: csoc-sops-helm
+              env:
+                - {name: MODE, value: helm}
+                - {name: CONFIG_PATH, value: '${schema.spec.configPath}'}
+                - {name: HELM_CHART, value: csoc/registry-cache}
+                - {name: HELM_VERSION, value: '${schema.spec.chartVersion}'}
+                - {name: REGISTRY_STORAGE_TYPE, value: '${schema.spec.backendType == "cinder" ? "filesystem" : "s3"}'}
+                - {name: REGISTRY_CLAIM_NAME, value: '${cinderstorage.?status.?claimName.orValue("")}'}
+                - {name: REGISTRY_S3_BUCKET, value: '${s3storage.?spec.?bucketName.orValue("")}'}
+                - {name: REGISTRY_S3_ENDPOINT, value: '${s3storage.?spec.?endpoint.orValue("")}'}
+          destination: {name: '${boundary.status.clusterName}', namespace: '${boundary.spec.destinationNamespace}'}
+          syncPolicy: {automated: {prune: true, selfHeal: true}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}
+          revisionHistoryLimit: 3

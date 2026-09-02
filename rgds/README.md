@@ -2,12 +2,20 @@
 
 KRO `ResourceGraphDefinition` library. `kustomization.yaml` is the single
 entrypoint for the Argo `rgds` Application. The tested Jetstream2 profile is
-grouped below `test-poc/`; its generated kinds remain reusable across any
+grouped below `v1-samples/`; its generated kinds remain reusable across any
 number of `SpokeIdentity` account instances.
+
+## Second-generation hub APIs
+
+`v2-hubs/` contains the current `infra.csoc.js2.org`,
+`delivery.csoc.js2.org`, and `services.csoc.js2.org` APIs. Every RGD is a
+single YAML document under `infrastructure/`, `bindings/`, or `services/`
+and is listed explicitly by Kustomize. These APIs run beside `v1-samples/`;
+renaming the package does not change any API group, Kind, or RGD identity.
 
 ## Subdirectories
 
-### test-poc/configmaps/
+### v1-samples/configmaps/
 
 Write-once configuration blocks that produce immutable ConfigMaps consumed by downstream graphs.
 
@@ -32,7 +40,7 @@ ordinary mutable fleet fields are `SpokeCluster.spec.kubernetes.minNodes` and
 `maxNodes`; workload replica and repository connection fields are explicit in
 their workload graph instances.
 
-### test-poc/cluster/v1/
+### v1-samples/cluster/v1/
 
 | File | Kind | Purpose |
 |------|------|---------|
@@ -40,7 +48,7 @@ their workload graph instances.
 
 `SpokeIdentity` creates the account namespace and a namespace-restricted `OpenStackClusterIdentity`. `SpokeCluster` exposes only mutable `minNodes`/`maxNodes`; all other inputs are read from the immutable ConfigMaps produced above.
 
-### test-poc/network/
+### v1-samples/network/
 
 | File | Kind | ORC management |
 |------|------|---------------|
@@ -61,7 +69,7 @@ Nova server-group, Neutron security-group, and Cinder volume graphs live under
 `compute/`, `security/`, and `storage/`, but are not composed into
 `SpokeCluster`; CAPO/CCM/CSI retain cluster infrastructure ownership.
 
-### test-poc/workloads/
+### v1-samples/workloads/
 
 | File | Kind | Delivery mechanism |
 |------|------|-------------------|

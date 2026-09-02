@@ -22,7 +22,11 @@ GitHub: `github.com/jayadeyemi/js-poc-csoc-app-catalog`
 
 ```
 rgds/
-  test-poc/            tested reusable OpenStack profile library
+  v2-hubs/               current one-file-per-RGD hub APIs
+    infrastructure/     account, machine, network, cluster, pool, foundation
+    bindings/           application, secret, storage, endpoint, and auth links
+    services/           pinned workload service APIs
+  v1-samples/            tested reusable OpenStack profile library
     configmaps/        write-once provider and spoke configuration blocks
     cluster/v1/        SpokeIdentity and SpokeCluster graphs
     compute/           ORC-managed keypairs and optional Nova placement graphs

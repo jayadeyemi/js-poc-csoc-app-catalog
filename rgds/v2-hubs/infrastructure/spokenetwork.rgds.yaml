@@ -1,0 +1,141 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: spokenetwork.infra.csoc.js2.org
+  annotations:
+    argocd.argoproj.io/sync-wave: "-11"
+    kro.run/description: Managed or exact-ID imported routed OpenStack topology
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: infra.csoc.js2.org
+    kind: SpokeNetwork
+    scope: Namespaced
+    spec:
+      accountRef:
+        name: string | required=true pattern="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+      mode: string | required=true enum="managedRouted,importedRouted"
+      nodeCIDR: string | required=true pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+      networkID: string | default="" pattern="^$|^[0-9a-f-]{36}$"
+      subnetID: string | default="" pattern="^$|^[0-9a-f-]{36}$"
+      routerID: string | default="" pattern="^$|^[0-9a-f-]{36}$"
+      dnsNameserver: string | required=true pattern="^([0-9]{1,3}\\.){3}[0-9]{1,3}$"
+      mtu: integer | default=1500 minimum=1280 maximum=9000
+      portSecurityEnabled: boolean | default=true
+    status:
+      ready: '${schema.spec.mode == "managedRouted" ? routerinterface.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True") : importedrouter.?status.?conditions.orValue([]).exists(c, c.type == "Available" && c.status == "True")}'
+      mode: ${schema.spec.mode}
+      networkID: '${schema.spec.mode == "managedRouted" ? managednetwork.?status.?id.orValue("") : schema.spec.networkID}'
+      subnetID: '${schema.spec.mode == "managedRouted" ? managedsubnet.?status.?id.orValue("") : schema.spec.subnetID}'
+      routerID: '${schema.spec.mode == "managedRouted" ? managedrouter.?status.?id.orValue("") : schema.spec.routerID}'
+  resources:
+    - id: account
+      externalRef:
+        apiVersion: infra.csoc.js2.org/v1alpha1
+        kind: SpokeAccount
+        metadata:
+          name: ${schema.spec.accountRef.name}
+          namespace: ${schema.metadata.namespace}
+    - id: externalnetwork
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata:
+          name: '${schema.metadata.name + "-external"}'
+          namespace: ${schema.metadata.namespace}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: unmanaged
+          import: {id: '${account.spec.externalNetworkID}'}
+    - id: managednetwork
+      includeWhen:
+        - ${schema.spec.mode == "managedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata: {name: '${schema.metadata.name + "-network"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: managed
+          managedOptions: {onDelete: delete}
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            mtu: ${schema.spec.mtu}
+            portSecurityEnabled: ${schema.spec.portSecurityEnabled}
+    - id: managedsubnet
+      includeWhen:
+        - ${schema.spec.mode == "managedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Subnet
+        metadata: {name: '${schema.metadata.name + "-subnet"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: managed
+          managedOptions: {onDelete: delete}
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            networkRef: ${managednetwork.metadata.name}
+            cidr: ${schema.spec.nodeCIDR}
+            ipVersion: 4
+            enableDHCP: true
+            gateway: {type: Automatic}
+            dnsNameservers: ['${schema.spec.dnsNameserver}']
+    - id: managedrouter
+      includeWhen:
+        - ${schema.spec.mode == "managedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Router
+        metadata: {name: '${schema.metadata.name + "-router"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: managed
+          managedOptions: {onDelete: delete}
+          resource:
+            name: '${"csoc-" + schema.metadata.name}'
+            externalGateways: [{networkRef: '${externalnetwork.metadata.name}'}]
+    - id: routerinterface
+      includeWhen:
+        - ${schema.spec.mode == "managedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: RouterInterface
+        metadata: {name: '${schema.metadata.name + "-interface"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          routerRef: ${managedrouter.metadata.name}
+          type: Subnet
+          subnetRef: ${managedsubnet.metadata.name}
+    - id: importednetwork
+      includeWhen:
+        - ${schema.spec.mode == "importedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Network
+        metadata: {name: '${schema.metadata.name + "-network"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: unmanaged
+          import: {id: '${schema.spec.networkID}'}
+    - id: importedsubnet
+      includeWhen:
+        - ${schema.spec.mode == "importedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Subnet
+        metadata: {name: '${schema.metadata.name + "-subnet"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: unmanaged
+          import: {id: '${schema.spec.subnetID}'}
+    - id: importedrouter
+      includeWhen:
+        - ${schema.spec.mode == "importedRouted"}
+      template:
+        apiVersion: openstack.k-orc.cloud/v1alpha1
+        kind: Router
+        metadata: {name: '${schema.metadata.name + "-router"}', namespace: '${schema.metadata.namespace}'}
+        spec:
+          cloudCredentialsRef: {cloudName: openstack, secretName: '${account.spec.credentialSecretName}'}
+          managementPolicy: unmanaged
+          import: {id: '${schema.spec.routerID}'}
